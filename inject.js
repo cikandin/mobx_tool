@@ -63,30 +63,36 @@
           try {
             // Action event
             if (event.type === 'action') {
-              actionCount++;
-              
-              // Add action to queue
-              self.actionQueue.push({
-                id: actionCount,
-                name: event.name,
-                type: event.type,
-                object: event.object ? event.object.constructor.name : null,
-                timestamp: Date.now()
-              });
-              
               // Always update store reference
               if (event.object) {
                 var storeName = event.object.constructor.name || 'Store';
                 self.stores.set(storeName, event.object);
+                
+                // Only record action if store is in filter (or no filter set)
+                if (!self.filteredStores || self.filteredStores.includes(storeName)) {
+                  actionCount++;
+                  
+                  // Add action to queue
+                  self.actionQueue.push({
+                    id: actionCount,
+                    name: event.name,
+                    type: event.type,
+                    object: storeName,
+                    timestamp: Date.now()
+                  });
+                  
+                  // Flush actions queue (debounced)
+                  self.flushActionsDebounced();
+                }
               }
-              
-              // Flush actions queue (debounced)
-              self.flushActionsDebounced();
             }
             
             // Observable update event
             if (event.type === 'update' || event.type === 'add' || event.type === 'delete') {
-              self.sendStateDebounced();
+              // Only update state if the observable is in a filtered store
+              if (!self.filteredStores || self.filteredStores.length > 0) {
+                self.sendStateDebounced();
+              }
             }
           } catch (e) {}
         });
@@ -142,6 +148,15 @@
         var self = this;
         var timestamp = Date.now();
         var allStores = {};
+        
+        // If filter is empty array, don't send anything
+        if (self.filteredStores && self.filteredStores.length === 0) {
+          safeSend('STATE_UPDATE', {
+            state: {},
+            timestamp: timestamp
+          });
+          return;
+        }
         
         this.stores.forEach(function(store, name) {
           // Skip if filtered and not in the filter list

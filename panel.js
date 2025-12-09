@@ -25,12 +25,11 @@
   
   // Send filter to page after connection
   function sendFilterToPage() {
-    if (selectedStores.size > 0) {
-      sendToPage({
-        type: 'SET_FILTER',
-        stores: Array.from(selectedStores)
-      });
-    }
+    // Always send filter (empty array = no stores selected)
+    sendToPage({
+      type: 'SET_FILTER',
+      stores: Array.from(selectedStores)
+    });
   }
 
   // Save selected stores to localStorage
@@ -150,12 +149,16 @@
         }
       });
       
-      reconnectAttempts = 0; // 연결 성공 시 재시도 횟수 초기화
+      reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+      
+      // Send initial filter
+      setTimeout(() => {
+        sendFilterToPage();
+      }, 100);
       
     } catch (error) {
-      console.error('[MobX DevTools Panel] Connection error:', error);
-      if (error.message.includes('Extension context invalidated')) {
-        updateStatus(false, '확장 프로그램이 업데이트되었습니다. 페이지를 새로고침하세요.');
+      if (error.message && error.message.includes('Extension context invalidated')) {
+        updateStatus(false, 'Extension has been updated. Please refresh the page.');
       }
     }
   }
@@ -324,12 +327,14 @@
       return;
     }
     
-    // Initialize selectedStores if empty
-    if (selectedStores.size === 0) {
-      allStoreNames.forEach(name => selectedStores.add(name));
-    }
+    // Don't auto-initialize - default is empty (all filters OFF)
     
-    container.innerHTML = allStoreNames.map(storeName => {
+    container.innerHTML = `
+      <div style="margin-bottom: 8px;">
+        <button id="selectAllStores" class="btn" style="font-size: 11px; padding: 4px 8px;">Select All</button>
+        <button id="deselectAllStores" class="btn" style="font-size: 11px; padding: 4px 8px;">Deselect All</button>
+      </div>
+    ` + allStoreNames.map(storeName => {
       const checked = selectedStores.has(storeName) ? 'checked' : '';
       return `
         <label>
@@ -338,6 +343,21 @@
         </label>
       `;
     }).join('');
+    
+    // Select/Deselect all buttons
+    document.getElementById('selectAllStores').addEventListener('click', () => {
+      allStoreNames.forEach(name => selectedStores.add(name));
+      saveSelectedStores();
+      renderStoreFilter();
+      renderState();
+    });
+    
+    document.getElementById('deselectAllStores').addEventListener('click', () => {
+      selectedStores.clear();
+      saveSelectedStores();
+      renderStoreFilter();
+      renderState();
+    });
     
     // Add event listeners
     container.querySelectorAll('.store-checkbox').forEach(checkbox => {
@@ -376,13 +396,14 @@
         return;
       }
       
-      if (selectedStores.size === 0 || selectedStores.has(storeName)) {
+      // Show only selected stores (no default selection)
+      if (selectedStores.has(storeName)) {
         filteredState[storeName] = currentState[storeName];
       }
     });
     
     if (Object.keys(filteredState).length === 0 && !editingStoreName) {
-      container.innerHTML = '<div class="empty-state">No stores selected</div>';
+      container.innerHTML = '<div class="empty-state">No stores selected. Click "Filter Stores" to select stores.</div>';
       return;
     }
     
