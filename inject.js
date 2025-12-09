@@ -1,16 +1,13 @@
-// MobX 상태 추적을 위한 주입 스크립트
-// 공식 mobx-devtools API 호환 + 성능 최적화
+// MobX DevTools Injection Script
+// Compatible with official mobx-devtools API
 (function() {
   'use strict';
 
   if (window.__MOBX_DEVTOOLS_GLOBAL_HOOK__) {
-    console.log('[MobX DevTools] Hook already exists');
     return;
   }
 
-  console.log('[MobX DevTools] Installing hook...');
-
-  // Debounce 함수
+  // Debounce utility
   function debounce(func, wait) {
     var timeout;
     return function() {
@@ -23,7 +20,7 @@
     };
   }
 
-  // 안전한 메시지 전송
+  // Safe message sending
   function safeSend(type, payload) {
     try {
       window.postMessage({
@@ -44,16 +41,13 @@
     // 공식 API: MobX 라이브러리 주입
     injectMobx: function(mobx) {
       try {
-        console.log('[MobX DevTools] injectMobx called, version:', mobx.version);
         this.mobx = mobx;
         safeSend('MOBX_DETECTED', {
           version: mobx.version || 'unknown',
           timestamp: Date.now()
         });
         this.setupSpy(mobx);
-      } catch (e) {
-        console.error('[MobX DevTools] injectMobx error:', e);
-      }
+      } catch (e) {}
       return this;
     },
     
@@ -89,24 +83,20 @@
               self.flushActionsDebounced();
             }
             
-            // Observable 업데이트 이벤트 (중요!)
+            // Observable 업데이트 이벤트
             if (event.type === 'update' || event.type === 'add' || event.type === 'delete') {
-              // Observable이 변경되면 즉시 상태 업데이트
               self.sendStateDebounced();
             }
           } catch (e) {}
         });
-        console.log('[MobX DevTools] Spy registered for action & update events');
-      } catch (e) {
-        console.warn('[MobX DevTools] Spy setup failed:', e);
-      }
+      } catch (e) {}
+    },
     },
     
     // 상태 전송 (debounced)
     sendStateDebounced: debounce(function() {
       var self = window.__MOBX_DEVTOOLS_GLOBAL_HOOK__;
       if (self) {
-        console.log('[MobX DevTools] Observable changed, sending state...');
         self.sendState();
       }
     }, 300),
@@ -131,7 +121,6 @@
     // 공식 API: mobx-react 주입
     injectMobxReact: function(mobxReact, mobx) {
       try {
-        console.log('[MobX DevTools] injectMobxReact called');
         if (mobx && !this.mobx) {
           this.injectMobx(mobx);
         }
@@ -142,7 +131,6 @@
     // 공식 API: Store 등록
     inject: function(name, store) {
       try {
-        console.log('[MobX DevTools] Store injected:', name);
         this.stores.set(name, store);
       } catch (e) {}
       return this;
@@ -168,29 +156,12 @@
         
         this.stores.forEach(function(store, name) {
           try {
-            if (name === 'LocationStore') {
-              console.log('[MobX DevTools] ======= LocationStore Debug =======');
-              console.log('Store object:', store);
-              console.log('Store keys:', Object.keys(store));
-              console.log('locationName:', store.locationName);
-              console.log('locationId:', store.locationId);
-              
-              // toJS 결과
-              if (self.mobx && self.mobx.toJS) {
-                var toJSResult = self.mobx.toJS(store);
-                console.log('toJS result keys:', Object.keys(toJSResult));
-                console.log('toJS locationName:', toJSResult.locationName);
-              }
-              console.log('=====================================');
-            }
-            
             // toJS로 observable을 일반 객체로 변환 (매번 최신 값)
             var plain;
             if (self.mobx && self.mobx.toJS) {
               try {
                 plain = self.mobx.toJS(store);
               } catch (e) {
-                console.warn('[MobX DevTools] toJS failed for', name, ', using direct read');
                 plain = self.serialize(store, 0);
               }
             } else {
@@ -199,12 +170,9 @@
             
             allStores[name] = plain;
           } catch (e) {
-            console.error('[MobX DevTools] Failed to serialize', name, ':', e.message);
-            allStores[name] = { error: 'Failed: ' + e.message };
+            allStores[name] = { error: 'Failed' };
           }
         });
-        
-        console.log('[MobX DevTools] All stores serialized, sending...');
         
         // JSON.parse(JSON.stringify())로 함수 완전 제거
         var cleanState = JSON.parse(JSON.stringify(allStores));
@@ -214,8 +182,6 @@
           state: cleanState,
           timestamp: timestamp
         });
-        
-        console.log('[MobX DevTools] State sent');
       } catch (e) {
         console.error('[MobX DevTools] sendState error:', e);
       }
@@ -273,17 +239,14 @@
       enumerable: false,
       configurable: true
     });
-    console.log('[MobX DevTools] Hook installed successfully');
   } catch (e) {
     window.__MOBX_DEVTOOLS_GLOBAL_HOOK__ = hook;
-    console.log('[MobX DevTools] Hook installed (fallback)');
   }
 
   // 이미 로드된 MobX 감지
   function detectExistingMobX() {
     try {
       if (window.mobx && !hook.mobx) {
-        console.log('[MobX DevTools] Found existing window.mobx');
         hook.injectMobx(window.mobx);
         return true;
       }
@@ -293,7 +256,6 @@
         var name = storeNames[i];
         try {
           if (window[name] && typeof window[name] === 'object') {
-            console.log('[MobX DevTools] Found store:', name);
             hook.stores.set(name, window[name]);
           }
         } catch (e) {}
@@ -327,7 +289,7 @@
   setTimeout(function() { detectExistingMobX(); }, 500);
   setTimeout(function() { detectExistingMobX(); }, 2000);
 
-  // 주기적 상태 업데이트 (10초마다 - 성능 최적화)
+  // 주기적 상태 업데이트 (10초마다)
   setInterval(function() {
     try {
       if (hook.stores.size > 0) {
@@ -335,7 +297,5 @@
       }
     } catch (e) {}
   }, 10000);
-  
-  console.log('[MobX DevTools] Hook ready');
   
 })();

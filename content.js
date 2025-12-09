@@ -49,19 +49,11 @@
         if (!event.data || event.data.source !== 'mobx-devtools-inject') return;
         if (!isConnected || !port) return;
         
-        console.log('[MobX Content] Received:', event.data.type);
-        
-        if (event.data.type === 'STATE_UPDATE' && event.data.payload && event.data.payload.state) {
-          var storeCount = Object.keys(event.data.payload.state).length;
-          console.log('[MobX Content] STATE_UPDATE with', storeCount, 'stores');
-        }
-        
         port.postMessage({
           type: 'MOBX_MESSAGE',
           payload: event.data
         });
       } catch (e) {
-        console.error('[MobX Content] Error:', e.message);
         if (e.message && e.message.indexOf('Extension context invalidated') !== -1) {
           isConnected = false;
           port = null;

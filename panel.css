@@ -273,3 +273,33 @@ body {
   margin-bottom: 16px;
 }
 
+.store-filter {
+  padding: 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.store-filter label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 8px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.store-filter label:hover {
+  background: #f0f0f0;
+}
+
+.store-filter input[type="checkbox"] {
+  cursor: pointer;
+}
+

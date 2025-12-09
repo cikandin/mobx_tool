@@ -1,4 +1,4 @@
-// DevTools 패널 메인 로직
+// DevTools Panel Main Logic
 (function() {
   'use strict';
 
@@ -7,29 +7,48 @@
   let observables = [];
   let connectionPort = null;
   let autoScroll = true;
-  let expandedPaths = new Set(); // 펼쳐진 노드 경로 추적
+  let expandedPaths = new Set(); // Track expanded node paths
+  let selectedStores = new Set(); // Track selected stores for filtering
+  let allStoreNames = []; // All available store names
 
-  // 탭 전환
+  // Load selected stores from localStorage
+  function loadSelectedStores() {
+    try {
+      const saved = localStorage.getItem('mobx-devtools-selected-stores');
+      if (saved) {
+        selectedStores = new Set(JSON.parse(saved));
+      }
+    } catch (e) {}
+  }
+
+  // Save selected stores to localStorage
+  function saveSelectedStores() {
+    try {
+      localStorage.setItem('mobx-devtools-selected-stores', JSON.stringify(Array.from(selectedStores)));
+    } catch (e) {}
+  }
+
+  loadSelectedStores();
+
+  // Tab switching
   document.querySelectorAll('.tab-button').forEach(button => {
     button.addEventListener('click', () => {
       const tabName = button.dataset.tab;
       
-      // 탭 버튼 활성화
       document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
       button.classList.add('active');
       
-      // 탭 컨텐츠 표시
       document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
       document.getElementById(`${tabName}Tab`).classList.add('active');
     });
   });
 
-  // 상태 새로고침
+  // Refresh state
   document.getElementById('refreshState').addEventListener('click', () => {
     requestState();
   });
 
-  // 상태 내보내기
+  // Export state
   document.getElementById('exportState').addEventListener('click', () => {
     const dataStr = JSON.stringify(currentState, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
@@ -41,20 +60,30 @@
     URL.revokeObjectURL(url);
   });
 
-  // 액션 로그 지우기
+  // Toggle store filter
+  document.getElementById('toggleStoreFilter').addEventListener('click', () => {
+    const filterDiv = document.getElementById('storeFilter');
+    if (filterDiv.style.display === 'none') {
+      filterDiv.style.display = 'flex';
+      renderStoreFilter();
+    } else {
+      filterDiv.style.display = 'none';
+    }
+  });
+
+  // Clear action log
   document.getElementById('clearActions').addEventListener('click', () => {
     actions = [];
     renderActions();
   });
 
-  // 자동 스크롤 토글
+  // Toggle auto scroll
   document.getElementById('autoScroll').addEventListener('change', (e) => {
     autoScroll = e.target.checked;
   });
 
   // 현재 탭 ID 가져오기 (DevTools API 사용)
   window.currentTabId = chrome.devtools.inspectedWindow.tabId;
-  console.log('[MobX DevTools Panel] Inspecting tab:', window.currentTabId);
 
   // Background와 연결
   let port;
@@ -95,10 +124,8 @@
       
       // 연결 해제 처리
       port.onDisconnect.addListener(() => {
-        console.warn('[MobX DevTools Panel] Port disconnected');
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           reconnectAttempts++;
-          console.log('[MobX DevTools Panel] Reconnecting... attempt', reconnectAttempts);
           setTimeout(connectToBackground, 1000);
         } else {
           updateStatus(false, '연결이 끊어졌습니다. 페이지를 새로고침하세요.');
@@ -106,7 +133,6 @@
       });
       
       reconnectAttempts = 0; // 연결 성공 시 재시도 횟수 초기화
-      console.log('[MobX DevTools Panel] Connected to background');
       
     } catch (error) {
       console.error('[MobX DevTools Panel] Connection error:', error);
@@ -121,13 +147,10 @@
   // Chrome 메시지 리스너 (fallback)
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
-      console.log('[MobX DevTools Panel] Runtime message:', message.type);
       if (message.type === 'MOBX_MESSAGE') {
         handleMobXMessage(message.payload);
       }
-    } catch (error) {
-      console.error('[MobX DevTools Panel] Error handling message:', error);
-    }
+    } catch (error) {}
     return true;
   });
 
@@ -135,16 +158,10 @@
   function sendToPage(message) {
     try {
       // 컨텍스트 유효성 확인
-      if (!chrome.runtime || !chrome.runtime.id) {
-        console.warn('[MobX DevTools] Extension context is invalid');
-        return;
-      }
+      if (!chrome.runtime || !chrome.runtime.id) return;
       
       // port가 유효한지 확인
-      if (!port) {
-        console.warn('[MobX DevTools] Port is not connected');
-        return;
-      }
+      if (!port) return;
       
       if (window.currentTabId) {
         port.postMessage({
@@ -159,7 +176,6 @@
         }).catch(() => {});
       }
     } catch (error) {
-      console.error('[MobX DevTools] Error sending message:', error);
       if (error.message && error.message.includes('Extension context invalidated')) {
         updateStatus(false, '확장 프로그램이 업데이트되었습니다. 페이지를 새로고침하세요.');
       }
@@ -172,8 +188,6 @@
   
   // MobX 메시지 처리
   function handleMobXMessage(data) {
-    console.log('[MobX DevTools Panel] handleMobXMessage:', data.type);
-    
     switch (data.type) {
       case 'MOBX_DETECTED':
         updateStatus(true, `MobX v${data.payload.version} 감지됨`);
@@ -196,35 +210,41 @@
         // Store 데이터 추가
         pendingStores[data.payload.name] = data.payload.data;
         
-        console.log('[MobX DevTools Panel] Received store:', data.payload.name, 
-                    '(', Object.keys(pendingStores).length, '/', expectedStoreCount, ')');
-        
         // 모든 store를 받았으면 렌더링
         if (Object.keys(pendingStores).length === expectedStoreCount) {
           currentState = pendingStores;
           var time = new Date().toLocaleTimeString();
           document.getElementById('lastUpdate').textContent = `${expectedStoreCount}개 store | ${time}`;
           renderState();
-          console.log('[MobX DevTools Panel] All stores received, rendering');
         }
         break;
       
       case 'STATE_UPDATE':
-        console.log('[MobX DevTools Panel] STATE_UPDATE received');
-        console.log('[MobX DevTools Panel] Store names:', Object.keys(data.payload.state));
-        console.log('[MobX DevTools Panel] Full data sample (LocationStore):', data.payload.state.LocationStore);
+        currentState = data.payload.state;
         
-        // 이전 상태와 비교
-        if (currentState.LocationStore && data.payload.state.LocationStore) {
-          var oldValue = JSON.stringify(currentState.LocationStore);
-          var newValue = JSON.stringify(data.payload.state.LocationStore);
-          console.log('[MobX DevTools Panel] LocationStore changed:', oldValue !== newValue);
+        // Check for new stores
+        const newStoreNames = Object.keys(currentState);
+        const hasNewStores = newStoreNames.some(name => !allStoreNames.includes(name));
+        
+        if (hasNewStores) {
+          // Add new stores to selectedStores by default
+          newStoreNames.forEach(name => {
+            if (!allStoreNames.includes(name)) {
+              selectedStores.add(name);
+            }
+          });
+          saveSelectedStores();
+          
+          // Update filter if visible
+          const filterDiv = document.getElementById('storeFilter');
+          if (filterDiv.style.display !== 'none') {
+            renderStoreFilter();
+          }
         }
         
-        currentState = data.payload.state;
         var storeCount = Object.keys(currentState).length;
         var time = new Date().toLocaleTimeString();
-        document.getElementById('lastUpdate').textContent = `${storeCount}개 store | ${time}`;
+        document.getElementById('lastUpdate').textContent = `${storeCount} stores | ${time}`;
         renderState();
         break;
       
@@ -272,21 +292,72 @@
   function requestState() {
     try {
       sendToPage({ type: 'GET_STATE' });
-    } catch (error) {
-      console.error('[MobX DevTools Panel] Error requesting state:', error);
-    }
+    } catch (error) {}
   }
 
-  // 상태 렌더링
+  // Render store filter
+  function renderStoreFilter() {
+    const container = document.getElementById('storeFilter');
+    allStoreNames = Object.keys(currentState);
+    
+    if (allStoreNames.length === 0) {
+      container.innerHTML = '<div style="color: #999;">No stores available</div>';
+      return;
+    }
+    
+    // Initialize selectedStores if empty
+    if (selectedStores.size === 0) {
+      allStoreNames.forEach(name => selectedStores.add(name));
+    }
+    
+    container.innerHTML = allStoreNames.map(storeName => {
+      const checked = selectedStores.has(storeName) ? 'checked' : '';
+      return `
+        <label>
+          <input type="checkbox" value="${storeName}" ${checked} class="store-checkbox">
+          ${storeName}
+        </label>
+      `;
+    }).join('');
+    
+    // Add event listeners
+    container.querySelectorAll('.store-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const storeName = e.target.value;
+        if (e.target.checked) {
+          selectedStores.add(storeName);
+        } else {
+          selectedStores.delete(storeName);
+        }
+        saveSelectedStores();
+        renderState();
+      });
+    });
+  }
+
+  // Render state (filtered by selected stores)
   function renderState() {
     const container = document.getElementById('stateTree');
     if (Object.keys(currentState).length === 0) {
-      container.innerHTML = '<div class="empty-state">상태가 없습니다</div>';
+      container.innerHTML = '<div class="empty-state">No state available</div>';
+      return;
+    }
+    
+    // Filter state by selected stores
+    const filteredState = {};
+    Object.keys(currentState).forEach(storeName => {
+      if (selectedStores.size === 0 || selectedStores.has(storeName)) {
+        filteredState[storeName] = currentState[storeName];
+      }
+    });
+    
+    if (Object.keys(filteredState).length === 0) {
+      container.innerHTML = '<div class="empty-state">No stores selected</div>';
       return;
     }
     
     container.innerHTML = '';
-    renderTree(container, currentState, 0, '');
+    renderTree(container, filteredState, 0, '');
   }
 
   // 트리 렌더링
