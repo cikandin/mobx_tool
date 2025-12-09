@@ -10,6 +10,8 @@
   let expandedPaths = new Set(); // Track expanded node paths
   let selectedStores = new Set(); // Track selected stores for filtering
   let allStoreNames = []; // All available store names
+  let isEditing = false; // Track if user is currently editing a value
+  let editingStoreName = null; // Track which store is being edited
 
   // Load selected stores from localStorage
   function loadSelectedStores() {
@@ -354,6 +356,12 @@
 
   // Render state (filtered by selected stores)
   function renderState() {
+    // Skip rendering if user is editing
+    if (isEditing) {
+      console.log('[MobX DevTools] Skipping render - user is editing');
+      return;
+    }
+    
     const container = document.getElementById('stateTree');
     if (Object.keys(currentState).length === 0) {
       container.innerHTML = '<div class="empty-state">No state available</div>';
@@ -363,17 +371,26 @@
     // Filter state by selected stores
     const filteredState = {};
     Object.keys(currentState).forEach(storeName => {
+      // Skip the store being edited
+      if (editingStoreName === storeName) {
+        return;
+      }
+      
       if (selectedStores.size === 0 || selectedStores.has(storeName)) {
         filteredState[storeName] = currentState[storeName];
       }
     });
     
-    if (Object.keys(filteredState).length === 0) {
+    if (Object.keys(filteredState).length === 0 && !editingStoreName) {
       container.innerHTML = '<div class="empty-state">No stores selected</div>';
       return;
     }
     
-    container.innerHTML = '';
+    // Don't clear container if editing - just update non-editing stores
+    if (!editingStoreName) {
+      container.innerHTML = '';
+    }
+    
     renderTree(container, filteredState, 0, '');
   }
 
@@ -544,6 +561,10 @@
   
   // Edit value function
   function editValue(element, storeName, path, currentValue) {
+    // Mark as editing
+    isEditing = true;
+    editingStoreName = storeName;
+    
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'value-editor';
@@ -570,10 +591,39 @@
           path: path,
           value: input.value
         });
+        
+        // Update local state immediately to prevent flicker
+        try {
+          const keys = path.split('.');
+          let target = currentState[storeName];
+          for (let i = 0; i < keys.length - 1; i++) {
+            target = target[keys[i]];
+          }
+          const lastKey = keys[keys.length - 1];
+          
+          // Convert type
+          let newValue = input.value;
+          const oldValue = target[lastKey];
+          if (typeof oldValue === 'number') {
+            newValue = parseFloat(input.value);
+            if (isNaN(newValue)) newValue = input.value;
+          } else if (typeof oldValue === 'boolean') {
+            newValue = input.value === 'true' || input.value === true;
+          }
+          
+          target[lastKey] = newValue;
+        } catch (e) {}
       }
       
       input.remove();
       element.style.display = '';
+      
+      // Mark editing as complete
+      isEditing = false;
+      editingStoreName = null;
+      
+      // Force render to update all stores
+      renderState();
     };
     
     input.addEventListener('blur', () => finishEdit(true));

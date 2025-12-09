@@ -219,8 +219,8 @@
         target[lastKey] = newValue;
         console.log('[MobX DevTools] Value updated:', path, 'from', oldValue, 'to', newValue);
         
-        // Send updated state
-        this.sendState();
+        // Don't send state immediately - let observable update trigger it
+        // this.sendState();
       } catch (e) {
         console.error('[MobX DevTools] setValue error:', e);
       }
