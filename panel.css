@@ -303,3 +303,24 @@ body {
   cursor: pointer;
 }
 
+.editable-value {
+  cursor: pointer;
+  border-bottom: 1px dashed #999;
+  transition: all 0.2s;
+}
+
+.editable-value:hover {
+  background: #fffacd;
+  border-bottom-color: #666;
+}
+
+.value-editor {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid #1976d2;
+  border-radius: 2px;
+  outline: none;
+  background: #fffacd;
+}
+

@@ -181,6 +181,51 @@
       }
     },
     
+    // Set value in observable store
+    setValue: function(storeName, path, value) {
+      try {
+        var store = this.stores.get(storeName);
+        if (!store) {
+          console.error('[MobX DevTools] Store not found:', storeName);
+          return;
+        }
+        
+        // Parse path: "user.name" -> ["user", "name"]
+        var keys = path.split('.');
+        var target = store;
+        
+        // Navigate to the parent object
+        for (var i = 0; i < keys.length - 1; i++) {
+          target = target[keys[i]];
+          if (!target || typeof target !== 'object') {
+            console.error('[MobX DevTools] Invalid path:', path);
+            return;
+          }
+        }
+        
+        // Set the value
+        var lastKey = keys[keys.length - 1];
+        var oldValue = target[lastKey];
+        
+        // Convert string value to appropriate type
+        var newValue = value;
+        if (typeof oldValue === 'number') {
+          newValue = parseFloat(value);
+          if (isNaN(newValue)) newValue = value;
+        } else if (typeof oldValue === 'boolean') {
+          newValue = value === 'true' || value === true;
+        }
+        
+        target[lastKey] = newValue;
+        console.log('[MobX DevTools] Value updated:', path, 'from', oldValue, 'to', newValue);
+        
+        // Send updated state
+        this.sendState();
+      } catch (e) {
+        console.error('[MobX DevTools] setValue error:', e);
+      }
+    },
+    
     // Serialize - directly read observable values
     serialize: function(obj, depth) {
       try {
@@ -279,6 +324,9 @@
           // Update filtered stores list
           hook.filteredStores = event.data.payload.stores;
           hook.sendState(); // Send immediately with new filter
+        } else if (event.data.type === 'SET_VALUE') {
+          // Set observable value
+          hook.setValue(event.data.payload.storeName, event.data.payload.path, event.data.payload.value);
         }
       } catch (e) {}
     });

@@ -377,8 +377,15 @@
     renderTree(container, filteredState, 0, '');
   }
 
-  // 트리 렌더링
-  function renderTree(container, obj, depth = 0, path = '') {
+  // Render tree
+  function renderTree(container, obj, depth = 0, path = '', storeName = '') {
+    // Extract store name from path if at top level
+    if (depth === 0 && !storeName) {
+      Object.keys(obj).forEach(key => {
+        renderTree(container, obj[key], 1, key, key);
+      });
+      return;
+    }
     if (obj === null || obj === undefined) {
       const node = document.createElement('div');
       node.className = 'tree-node';
@@ -395,19 +402,34 @@
       
       let value = obj;
       let className = 'tree-value';
+      let editable = false;
       
       if (typeof obj === 'string') {
         value = `"${obj}"`;
         className = 'tree-string';
+        editable = true;
       } else if (typeof obj === 'number') {
         className = 'tree-number';
+        editable = true;
       } else if (typeof obj === 'boolean') {
         className = 'tree-boolean';
+        editable = true;
       } else if (Array.isArray(obj)) {
         value = `[${obj.length} items]`;
       }
       
-      node.innerHTML = `<span class="${className}">${value}</span>`;
+      const valueSpan = document.createElement('span');
+      valueSpan.className = className + (editable ? ' editable-value' : '');
+      valueSpan.textContent = value;
+      
+      if (editable && storeName) {
+        valueSpan.title = 'Double-click to edit';
+        valueSpan.addEventListener('dblclick', () => {
+          editValue(valueSpan, storeName, path, obj);
+        });
+      }
+      
+      node.appendChild(valueSpan);
       container.appendChild(node);
       return;
     }
@@ -425,7 +447,7 @@
         const toggle = document.createElement('span');
         toggle.className = 'tree-toggle';
         
-        // 이전에 펼쳐져 있었는지 확인
+        // Check if previously expanded
         const wasExpanded = expandedPaths.has(currentPath);
         toggle.className = wasExpanded ? 'tree-toggle expanded' : 'tree-toggle';
         toggle.textContent = wasExpanded ? '▼' : '▶';
@@ -435,24 +457,24 @@
           if (isExpanded) {
             toggle.classList.remove('expanded');
             toggle.textContent = '▶';
-            expandedPaths.delete(currentPath); // 경로 제거
+            expandedPaths.delete(currentPath);
             if (node.nextSibling && node.nextSibling.classList.contains('tree-children')) {
               node.nextSibling.remove();
             }
           } else {
             toggle.classList.add('expanded');
             toggle.textContent = '▼';
-            expandedPaths.add(currentPath); // 경로 추가
+            expandedPaths.add(currentPath);
             const children = document.createElement('div');
             children.className = 'tree-children';
-            renderTree(children, value, depth + 1, currentPath);
+            renderTree(children, value, depth + 1, currentPath, storeName);
             node.parentNode.insertBefore(children, node.nextSibling);
           }
         });
         
         node.appendChild(toggle);
         
-        // innerHTML += 대신 createElement 사용
+        // Use createElement instead of innerHTML +=
         const keySpan = document.createElement('span');
         keySpan.className = 'tree-key';
         keySpan.textContent = key;
@@ -465,17 +487,17 @@
         valueSpan.textContent = '{...}';
         node.appendChild(valueSpan);
         
-        // 이전에 펼쳐져 있었으면 자동으로 다시 펼치기
+        // Auto-expand if previously expanded
         if (wasExpanded) {
           const children = document.createElement('div');
           children.className = 'tree-children';
-          renderTree(children, value, depth + 1, currentPath);
+          renderTree(children, value, depth + 1, currentPath, storeName);
           container.appendChild(node);
           container.appendChild(children);
-          return; // forEach 계속
+          return;
         }
       } else {
-        // 키 표시
+        // Show key
         const keySpan = document.createElement('span');
         keySpan.className = 'tree-key';
         keySpan.textContent = key;
@@ -483,17 +505,22 @@
         
         node.appendChild(document.createTextNode(': '));
         
-        // 값 표시
+        // Show value (editable)
         const valueNode = document.createElement('span');
+        let editable = false;
+        
         if (typeof value === 'string') {
           valueNode.className = 'tree-string';
           valueNode.textContent = `"${value}"`;
+          editable = true;
         } else if (typeof value === 'number') {
           valueNode.className = 'tree-number';
           valueNode.textContent = value;
+          editable = true;
         } else if (typeof value === 'boolean') {
           valueNode.className = 'tree-boolean';
           valueNode.textContent = value;
+          editable = true;
         } else if (value === null) {
           valueNode.className = 'tree-null';
           valueNode.textContent = 'null';
@@ -504,10 +531,63 @@
           valueNode.className = 'tree-value';
           valueNode.textContent = String(value);
         }
+        
+        if (editable && storeName) {
+          valueNode.classList.add('editable-value');
+          valueNode.title = 'Double-click to edit';
+          valueNode.addEventListener('dblclick', () => {
+            editValue(valueNode, storeName, currentPath, value);
+          });
+        }
+        
         node.appendChild(valueNode);
       }
       
       container.appendChild(node);
+    });
+  }
+  
+  // Edit value function
+  function editValue(element, storeName, path, currentValue) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'value-editor';
+    
+    // Set initial value (remove quotes for strings)
+    let displayValue = currentValue;
+    if (typeof currentValue === 'string') {
+      displayValue = currentValue;
+    }
+    input.value = displayValue;
+    
+    // Replace element with input
+    element.style.display = 'none';
+    element.parentNode.insertBefore(input, element);
+    input.focus();
+    input.select();
+    
+    const finishEdit = (save) => {
+      if (save && input.value !== displayValue.toString()) {
+        // Send SET_VALUE message to inject.js
+        sendToPage({
+          type: 'SET_VALUE',
+          storeName: storeName,
+          path: path,
+          value: input.value
+        });
+      }
+      
+      input.remove();
+      element.style.display = '';
+    };
+    
+    input.addEventListener('blur', () => finishEdit(true));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        finishEdit(true);
+      } else if (e.key === 'Escape') {
+        finishEdit(false);
+      }
     });
   }
 
