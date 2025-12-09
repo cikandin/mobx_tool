@@ -20,11 +20,27 @@
       }
     } catch (e) {}
   }
+  
+  // Send filter to page after connection
+  function sendFilterToPage() {
+    if (selectedStores.size > 0) {
+      sendToPage({
+        type: 'SET_FILTER',
+        stores: Array.from(selectedStores)
+      });
+    }
+  }
 
   // Save selected stores to localStorage
   function saveSelectedStores() {
     try {
       localStorage.setItem('mobx-devtools-selected-stores', JSON.stringify(Array.from(selectedStores)));
+      
+      // Send filter to inject.js
+      sendToPage({
+        type: 'SET_FILTER',
+        stores: Array.from(selectedStores)
+      });
     } catch (e) {}
   }
 
@@ -190,7 +206,8 @@
   function handleMobXMessage(data) {
     switch (data.type) {
       case 'MOBX_DETECTED':
-        updateStatus(true, `MobX v${data.payload.version} 감지됨`);
+        updateStatus(true, `MobX v${data.payload.version} detected`);
+        sendFilterToPage(); // Send filter first
         requestState();
         break;
       

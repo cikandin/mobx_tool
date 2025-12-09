@@ -36,7 +36,8 @@
   var hook = {
     mobx: null,
     stores: new Map(),
-    actionQueue: [], // 액션 큐
+    actionQueue: [], // Action queue
+    filteredStores: null, // Filtered store names (null = send all)
     
     // Official API: Inject MobX library
     injectMobx: function(mobx) {
@@ -139,21 +140,15 @@
     sendState: function() {
       try {
         var self = this;
-        var storeNames = [];
         var timestamp = Date.now();
-        
-        // 먼저 모든 store 이름 수집
-        this.stores.forEach(function(store, name) {
-          storeNames.push(name);
-        });
-        
-        console.log('[MobX DevTools] Sending', storeNames.length, 'stores:', storeNames.join(', '));
-        
-        // 모든 store를 모아서 한번에 전송
         var allStores = {};
-        var index = 0;
         
         this.stores.forEach(function(store, name) {
+          // Skip if filtered and not in the filter list
+          if (self.filteredStores && !self.filteredStores.includes(name)) {
+            return;
+          }
+          
           try {
             // Convert observable to plain object using toJS (always get latest value)
             var plain;
@@ -277,8 +272,13 @@
     window.addEventListener('message', function(event) {
       try {
         if (!event.data || event.data.source !== 'mobx-devtools-content') return;
+        
         if (event.data.type === 'GET_STATE') {
           hook.sendState();
+        } else if (event.data.type === 'SET_FILTER') {
+          // Update filtered stores list
+          hook.filteredStores = event.data.payload.stores;
+          hook.sendState(); // Send immediately with new filter
         }
       } catch (e) {}
     });
