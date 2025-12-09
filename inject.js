@@ -38,7 +38,7 @@
     stores: new Map(),
     actionQueue: [], // 액션 큐
     
-    // 공식 API: MobX 라이브러리 주입
+    // Official API: Inject MobX library
     injectMobx: function(mobx) {
       try {
         this.mobx = mobx;
@@ -51,7 +51,7 @@
       return this;
     },
     
-    // Spy 설정
+    // Setup spy
     setupSpy: function(mobx) {
       if (!mobx || !mobx.spy) return;
       var self = this;
@@ -60,11 +60,11 @@
       try {
         mobx.spy(function(event) {
           try {
-            // 액션 이벤트
+            // Action event
             if (event.type === 'action') {
               actionCount++;
               
-              // 액션을 큐에 추가
+              // Add action to queue
               self.actionQueue.push({
                 id: actionCount,
                 name: event.name,
@@ -73,17 +73,17 @@
                 timestamp: Date.now()
               });
               
-              // Store 참조 항상 갱신
+              // Always update store reference
               if (event.object) {
                 var storeName = event.object.constructor.name || 'Store';
                 self.stores.set(storeName, event.object);
               }
               
-              // 액션 큐 전송 (debounced)
+              // Flush actions queue (debounced)
               self.flushActionsDebounced();
             }
             
-            // Observable 업데이트 이벤트
+            // Observable update event
             if (event.type === 'update' || event.type === 'add' || event.type === 'delete') {
               self.sendStateDebounced();
             }
@@ -91,9 +91,8 @@
         });
       } catch (e) {}
     },
-    },
     
-    // 상태 전송 (debounced)
+    // State sending (debounced)
     sendStateDebounced: debounce(function() {
       var self = window.__MOBX_DEVTOOLS_GLOBAL_HOOK__;
       if (self) {
@@ -101,7 +100,7 @@
       }
     }, 300),
     
-    // 액션 큐 전송 (debounced) - 500ms 대기
+    // Flush actions queue (debounced - 500ms)
     flushActionsDebounced: debounce(function() {
       var self = window.__MOBX_DEVTOOLS_GLOBAL_HOOK__;
       if (self && self.actionQueue && self.actionQueue.length > 0) {
@@ -118,7 +117,7 @@
       }
     }, 500),
     
-    // 공식 API: mobx-react 주입
+    // Official API: Inject mobx-react
     injectMobxReact: function(mobxReact, mobx) {
       try {
         if (mobx && !this.mobx) {
@@ -128,7 +127,7 @@
       return this;
     },
     
-    // 공식 API: Store 등록
+    // Official API: Register store
     inject: function(name, store) {
       try {
         this.stores.set(name, store);
@@ -136,7 +135,7 @@
       return this;
     },
     
-    // 상태 전송
+    // Send state
     sendState: function() {
       try {
         var self = this;
@@ -156,7 +155,7 @@
         
         this.stores.forEach(function(store, name) {
           try {
-            // toJS로 observable을 일반 객체로 변환 (매번 최신 값)
+            // Convert observable to plain object using toJS (always get latest value)
             var plain;
             if (self.mobx && self.mobx.toJS) {
               try {
@@ -174,10 +173,10 @@
           }
         });
         
-        // JSON.parse(JSON.stringify())로 함수 완전 제거
+        // Remove all functions completely using JSON.parse(JSON.stringify())
         var cleanState = JSON.parse(JSON.stringify(allStores));
         
-        // 한번에 전송
+        // Send all at once
         safeSend('STATE_UPDATE', {
           state: cleanState,
           timestamp: timestamp
@@ -187,7 +186,7 @@
       }
     },
     
-    // 직렬화 - observable 값을 직접 읽기
+    // Serialize - directly read observable values
     serialize: function(obj, depth) {
       try {
         if (depth > 5) return '[Max Depth]';
@@ -207,7 +206,7 @@
           });
         }
         
-        // 객체를 직접 순회하면서 값 읽기 (toJS 대신)
+        // Traverse object directly to read values (instead of toJS)
         var result = {};
         var keys = Object.keys(obj).slice(0, 100);
         var self = this;
@@ -215,7 +214,7 @@
         keys.forEach(function(key) {
           if (key.charAt(0) === '$' || key.charAt(0) === '_') return;
           try {
-            // 직접 값을 읽음 (getter 실행됨 = 최신 observable 값)
+            // Read value directly (getter executed = get latest observable value)
             var value = obj[key];
             if (typeof value === 'function') return;
             result[key] = self.serialize(value, depth + 1);
@@ -231,7 +230,7 @@
     }
   };
 
-  // 전역 훅 설치
+  // Install global hook
   try {
     Object.defineProperty(window, '__MOBX_DEVTOOLS_GLOBAL_HOOK__', {
       value: hook,
@@ -243,7 +242,7 @@
     window.__MOBX_DEVTOOLS_GLOBAL_HOOK__ = hook;
   }
 
-  // 이미 로드된 MobX 감지
+  // Detect already loaded MobX
   function detectExistingMobX() {
     try {
       if (window.mobx && !hook.mobx) {
@@ -273,7 +272,7 @@
     return false;
   }
 
-  // DevTools 요청 처리
+  // Handle DevTools requests
   try {
     window.addEventListener('message', function(event) {
       try {
@@ -285,11 +284,11 @@
     });
   } catch (e) {}
 
-  // 초기 감지 시도
+  // Initial detection attempts
   setTimeout(function() { detectExistingMobX(); }, 500);
   setTimeout(function() { detectExistingMobX(); }, 2000);
 
-  // 주기적 상태 업데이트 (10초마다)
+  // Periodic state update (every 10 seconds)
   setInterval(function() {
     try {
       if (hook.stores.size > 0) {

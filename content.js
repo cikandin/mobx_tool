@@ -1,9 +1,9 @@
-// Content Script - 페이지와 DevTools 간 브릿지
-// document_start에서 실행되므로 최대한 빠르게 inject.js 주입
+// Content Script - Bridge between page and DevTools
+// Runs at document_start, so inject.js as soon as possible
 (function() {
   'use strict';
 
-  // 즉시 inject.js 주입 (MobX보다 먼저 로드되어야 함)
+  // Inject inject.js immediately (must be loaded before MobX)
   try {
     var script = document.createElement('script');
     script.src = chrome.runtime.getURL('inject.js');
@@ -11,7 +11,7 @@
     (document.head || document.documentElement).appendChild(script);
   } catch (e) {}
 
-  // 나머지는 DOM 로드 후 실행
+  // Rest runs after DOM is loaded
   var port = null;
   var isConnected = false;
 
@@ -62,7 +62,7 @@
     });
   }
 
-  // DOM 준비되면 연결
+  // Connect when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
       connect();

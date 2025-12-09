@@ -2,7 +2,7 @@
 const contentConnections = new Map(); // tabId -> content port
 const devtoolsConnections = new Map(); // tabId -> devtools port
 
-// Content script와의 연결 처리
+// Handle connection with content script
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'mobx-devtools-content') {
     const tabId = port.sender?.tab?.id;
@@ -10,7 +10,7 @@ chrome.runtime.onConnect.addListener((port) => {
       contentConnections.set(tabId, port);
       
       port.onMessage.addListener((message) => {
-        // 해당 탭의 DevTools로만 메시지 전송
+        // Send message only to DevTools of the same tab
         const devtoolsPort = devtoolsConnections.get(tabId);
         if (devtoolsPort) {
           devtoolsPort.postMessage(message);
@@ -22,7 +22,7 @@ chrome.runtime.onConnect.addListener((port) => {
       });
     }
   } else if (port.name === 'mobx-devtools-panel') {
-    // DevTools 패널 연결 - tabId는 메시지에서 받음
+    // DevTools panel connection - tabId received from message
     let panelTabId = null;
     
     port.onMessage.addListener((message) => {
@@ -30,7 +30,7 @@ chrome.runtime.onConnect.addListener((port) => {
         panelTabId = message.tabId;
         devtoolsConnections.set(panelTabId, port);
         
-        // 이미 content script가 연결되어 있다면 초기 상태 요청
+        // Request initial state if content script is already connected
         const contentPort = contentConnections.get(panelTabId);
         if (contentPort) {
           contentPort.postMessage({ type: 'GET_STATE' });
@@ -51,7 +51,7 @@ chrome.runtime.onConnect.addListener((port) => {
   }
 });
 
-// 메시지 리스너 (fallback)
+// Message listener (fallback)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
