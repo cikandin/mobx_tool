@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+*.log
+*.zip
+*.crx
+*.pem
+
+# 하지만 lib/mobx.js는 포함해야 함 (로컬 파일로 사용)
+!lib/mobx.js
+

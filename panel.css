@@ -1,0 +1,275 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 12px;
+  background: #f5f5f5;
+  color: #333;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.header {
+  background: #2d2d2d;
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #444;
+}
+
+.header h1 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #666;
+  display: inline-block;
+}
+
+.status-indicator.connected {
+  background: #4caf50;
+  box-shadow: 0 0 4px #4caf50;
+}
+
+.status-indicator.disconnected {
+  background: #f44336;
+}
+
+.tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+
+.tab-button {
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab-button:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.tab-button.active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  font-weight: 600;
+}
+
+.tab-content {
+  display: none;
+  flex: 1;
+  overflow: auto;
+  background: white;
+}
+
+.tab-content.active {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  padding: 8px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn {
+  padding: 6px 12px;
+  background: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.2s;
+}
+
+.btn:hover {
+  background: #1565c0;
+}
+
+.btn:active {
+  background: #0d47a1;
+}
+
+.tree-view {
+  padding: 12px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow: auto;
+  flex: 1;
+}
+
+.tree-node {
+  margin-left: 16px;
+}
+
+.tree-key {
+  color: #881391;
+  font-weight: 600;
+}
+
+.tree-value {
+  color: #1a1aa6;
+}
+
+.tree-string {
+  color: #0b6125;
+}
+
+.tree-number {
+  color: #1c00cf;
+}
+
+.tree-boolean {
+  color: #0d48aa;
+}
+
+.tree-null {
+  color: #808080;
+}
+
+.tree-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: inline-block;
+  width: 12px;
+  margin-right: 4px;
+}
+
+.tree-toggle::before {
+  content: '▶';
+  color: #666;
+  font-size: 10px;
+}
+
+.tree-toggle.expanded::before {
+  content: '▼';
+}
+
+.actions-list {
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.action-item {
+  background: #f9f9f9;
+  border-left: 3px solid #1976d2;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.action-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.action-name {
+  font-weight: 600;
+  color: #1976d2;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.action-store {
+  color: #666;
+  font-size: 10px;
+  background: #e3e3e3;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+}
+
+.action-time {
+  color: #999;
+  font-size: 10px;
+  margin-left: auto;
+}
+
+.action-args {
+  margin-top: 4px;
+  padding-left: 12px;
+  color: #666;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 10px;
+}
+
+.observables-list {
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.observable-item {
+  background: #f9f9f9;
+  border-left: 3px solid #4caf50;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.observable-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.observable-name {
+  font-weight: 600;
+  color: #4caf50;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.empty-state {
+  padding: 40px;
+  text-align: center;
+  color: #999;
+}
+
+.empty-state::before {
+  content: '📦';
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+}
+

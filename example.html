@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MobX DevTools 테스트 페이지</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      background: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #1565c0;
+    }
+    .counter {
+      font-size: 48px;
+      text-align: center;
+      margin: 20px 0;
+      color: #1976d2;
+    }
+    .info {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>MobX DevTools 테스트 페이지</h1>
+  
+  <div class="info">
+    <p><strong>사용 방법:</strong></p>
+    <ol>
+      <li>Chrome DevTools를 엽니다 (F12 또는 Cmd+Option+I)</li>
+      <li>"MobX" 탭을 클릭합니다</li>
+      <li>아래 버튼들을 클릭하여 액션을 실행합니다</li>
+      <li>MobX DevTools에서 상태 변화와 액션을 확인합니다</li>
+    </ol>
+  </div>
+
+  <div class="counter" id="counter">0</div>
+  
+  <div style="text-align: center;">
+    <button id="btnIncrement">증가 (+1)</button>
+    <button id="btnDecrement">감소 (-1)</button>
+    <button id="btnIncrementBy">5 증가</button>
+    <button id="btnReset">리셋</button>
+  </div>
+
+  <div class="info">
+    <h3>현재 상태:</h3>
+    <pre id="state"></pre>
+  </div>
+
+  <!-- MobX 라이브러리 -->
+  <script src="lib/mobx.js"></script>
+  
+  <!-- 앱 코드 -->
+  <script>
+    console.log('스크립트 시작');
+    console.log('window.mobx:', typeof window.mobx);
+    
+    // MobX 확인
+    if (typeof window.mobx === 'undefined') {
+      alert('MobX를 로드할 수 없습니다. npm install을 실행하세요.');
+      throw new Error('MobX not loaded');
+    }
+    
+    const { observable, action, makeObservable, autorun } = window.mobx;
+    console.log('MobX 로드 성공!', window.mobx);
+
+    // 카운터 스토어
+    class CounterStore {
+      count = 0;
+      history = [];
+
+      constructor() {
+        makeObservable(this, {
+          count: observable,
+          history: observable,
+          increment: action,
+          decrement: action,
+          incrementBy: action,
+          reset: action
+        });
+      }
+
+      increment() {
+        this.count++;
+        this.history.push({ type: 'increment', value: this.count, time: Date.now() });
+      }
+
+      decrement() {
+        this.count--;
+        this.history.push({ type: 'decrement', value: this.count, time: Date.now() });
+      }
+
+      incrementBy(amount) {
+        this.count += amount;
+        this.history.push({ type: 'incrementBy', amount, value: this.count, time: Date.now() });
+      }
+
+      reset() {
+        this.count = 0;
+        this.history = [];
+        this.history.push({ type: 'reset', value: this.count, time: Date.now() });
+      }
+    }
+
+    const store = new CounterStore();
+    window.store = store; // 디버깅용
+
+    // UI 업데이트
+    function updateUI() {
+      document.getElementById('counter').textContent = store.count;
+      document.getElementById('state').textContent = JSON.stringify({
+        count: store.count,
+        historyLength: store.history.length
+      }, null, 2);
+    }
+
+    // MobX autorun으로 자동 UI 업데이트
+    autorun(() => {
+      updateUI();
+    });
+
+    // 버튼 이벤트
+    document.getElementById('btnIncrement').onclick = () => store.increment();
+    document.getElementById('btnDecrement').onclick = () => store.decrement();
+    document.getElementById('btnIncrementBy').onclick = () => store.incrementBy(5);
+    document.getElementById('btnReset').onclick = () => store.reset();
+
+    console.log('초기화 완료!');
+  </script>
+</body>
+</html>

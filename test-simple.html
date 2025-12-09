@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Simple MobX Test</title>
+</head>
+<body>
+  <h1>MobX 테스트</h1>
+  <div id="counter">0</div>
+  <button id="btn">+1</button>
+  
+  <script src="lib/mobx.js"></script>
+  <script>
+    console.log('=== MobX 테스트 시작 ===');
+    console.log('typeof mobx:', typeof mobx);
+    console.log('typeof window.mobx:', typeof window.mobx);
+    console.log('window.mobx:', window.mobx);
+    
+    if (!window.mobx) {
+      document.body.innerHTML += '<p style="color:red">MobX 로드 실패!</p>';
+    } else {
+      document.body.innerHTML += '<p style="color:green">MobX 로드 성공!</p>';
+      
+      // 간단한 observable 테스트
+      const { observable, action, autorun } = window.mobx;
+      
+      const state = observable({
+        count: 0
+      });
+      
+      // autorun으로 자동 UI 업데이트
+      autorun(() => {
+        document.getElementById('counter').textContent = state.count;
+        console.log('UI 업데이트:', state.count);
+      });
+      
+      document.getElementById('btn').addEventListener('click', function() {
+        state.count++;
+        console.log('버튼 클릭! count:', state.count);
+      });
+      
+      console.log('초기화 완료');
+    }
+  </script>
+</body>
+</html>
+

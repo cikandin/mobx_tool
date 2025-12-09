@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MobX DevTools</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <h1>MobX DevTools</h1>
+      <div class="status" id="status">
+        <span class="status-indicator" id="statusIndicator"></span>
+        <span id="statusText">MobX 감지 중...</span>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-button active" data-tab="state">State</button>
+      <button class="tab-button" data-tab="actions">Actions</button>
+      <button class="tab-button" data-tab="observables">Observables</button>
+    </div>
+
+    <div class="tab-content active" id="stateTab">
+      <div class="toolbar">
+        <button id="refreshState" class="btn">새로고침</button>
+        <button id="exportState" class="btn">내보내기</button>
+        <span id="lastUpdate" style="margin-left: auto; color: #999; font-size: 11px;"></span>
+      </div>
+      <div id="stateTree" class="tree-view"></div>
+    </div>
+
+    <div class="tab-content" id="actionsTab">
+      <div class="toolbar">
+        <button id="clearActions" class="btn">로그 지우기</button>
+        <label>
+          <input type="checkbox" id="autoScroll"> 자동 스크롤
+        </label>
+      </div>
+      <div id="actionsList" class="actions-list"></div>
+    </div>
+
+    <div class="tab-content" id="observablesTab">
+      <div id="observablesList" class="observables-list"></div>
+    </div>
+  </div>
+
+  <script src="panel.js"></script>
+</body>
+</html>
+
