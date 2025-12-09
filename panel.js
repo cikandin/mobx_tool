@@ -379,13 +379,6 @@
 
   // Render tree
   function renderTree(container, obj, depth = 0, path = '', storeName = '') {
-    // Extract store name from path if at top level
-    if (depth === 0 && !storeName) {
-      Object.keys(obj).forEach(key => {
-        renderTree(container, obj[key], 1, key, key);
-      });
-      return;
-    }
     if (obj === null || obj === undefined) {
       const node = document.createElement('div');
       node.className = 'tree-node';
@@ -441,6 +434,8 @@
       
       const value = obj[key];
       const currentPath = path ? `${path}.${key}` : key;
+      // At depth 0, key is the storeName
+      const currentStoreName = depth === 0 ? key : storeName;
       const isExpandable = typeof value === 'object' && value !== null && !Array.isArray(value);
       
       if (isExpandable) {
@@ -467,7 +462,7 @@
             expandedPaths.add(currentPath);
             const children = document.createElement('div');
             children.className = 'tree-children';
-            renderTree(children, value, depth + 1, currentPath, storeName);
+            renderTree(children, value, depth + 1, currentPath, currentStoreName);
             node.parentNode.insertBefore(children, node.nextSibling);
           }
         });
@@ -491,7 +486,7 @@
         if (wasExpanded) {
           const children = document.createElement('div');
           children.className = 'tree-children';
-          renderTree(children, value, depth + 1, currentPath, storeName);
+          renderTree(children, value, depth + 1, currentPath, currentStoreName);
           container.appendChild(node);
           container.appendChild(children);
           return;
@@ -532,11 +527,11 @@
           valueNode.textContent = String(value);
         }
         
-        if (editable && storeName) {
+        if (editable && currentStoreName) {
           valueNode.classList.add('editable-value');
           valueNode.title = 'Double-click to edit';
           valueNode.addEventListener('dblclick', () => {
-            editValue(valueNode, storeName, currentPath, value);
+            editValue(valueNode, currentStoreName, currentPath, value);
           });
         }
         
