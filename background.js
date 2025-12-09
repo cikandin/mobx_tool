@@ -12,7 +12,11 @@ chrome.runtime.onConnect.addListener((port) => {
       
       port.onMessage.addListener((message) => {
         console.log('[Background] Message from content script, tab:', tabId, message.type);
-        console.log('[Background] Message payload type:', message.payload?.type);
+        
+        if (message.payload && message.payload.type === 'STATE_UPDATE' && message.payload.payload) {
+          var storeCount = Object.keys(message.payload.payload.state || {}).length;
+          console.log('[Background] STATE_UPDATE with', storeCount, 'stores');
+        }
         
         // 해당 탭의 DevTools로만 메시지 전송
         const devtoolsPort = devtoolsConnections.get(tabId);

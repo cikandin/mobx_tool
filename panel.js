@@ -166,9 +166,13 @@
     }
   }
 
+  let pendingStores = {};
+  let lastTimestamp = null;
+  let expectedStoreCount = 0;
+  
   // MobX 메시지 처리
   function handleMobXMessage(data) {
-    console.log('[MobX DevTools Panel] handleMobXMessage:', data.type, data);
+    console.log('[MobX DevTools Panel] handleMobXMessage:', data.type);
     
     switch (data.type) {
       case 'MOBX_DETECTED':
@@ -181,8 +185,42 @@
         renderState();
         break;
       
+      case 'STORE_DATA':
+        // 새로운 타임스탬프면 초기화
+        if (lastTimestamp !== data.payload.timestamp) {
+          pendingStores = {};
+          lastTimestamp = data.payload.timestamp;
+          expectedStoreCount = data.payload.total;
+        }
+        
+        // Store 데이터 추가
+        pendingStores[data.payload.name] = data.payload.data;
+        
+        console.log('[MobX DevTools Panel] Received store:', data.payload.name, 
+                    '(', Object.keys(pendingStores).length, '/', expectedStoreCount, ')');
+        
+        // 모든 store를 받았으면 렌더링
+        if (Object.keys(pendingStores).length === expectedStoreCount) {
+          currentState = pendingStores;
+          var time = new Date().toLocaleTimeString();
+          document.getElementById('lastUpdate').textContent = `${expectedStoreCount}개 store | ${time}`;
+          renderState();
+          console.log('[MobX DevTools Panel] All stores received, rendering');
+        }
+        break;
+      
       case 'STATE_UPDATE':
-        console.log('[MobX DevTools Panel] STATE_UPDATE received:', data.payload.state);
+        console.log('[MobX DevTools Panel] STATE_UPDATE received');
+        console.log('[MobX DevTools Panel] Store names:', Object.keys(data.payload.state));
+        console.log('[MobX DevTools Panel] Full data sample (LocationStore):', data.payload.state.LocationStore);
+        
+        // 이전 상태와 비교
+        if (currentState.LocationStore && data.payload.state.LocationStore) {
+          var oldValue = JSON.stringify(currentState.LocationStore);
+          var newValue = JSON.stringify(data.payload.state.LocationStore);
+          console.log('[MobX DevTools Panel] LocationStore changed:', oldValue !== newValue);
+        }
+        
         currentState = data.payload.state;
         var storeCount = Object.keys(currentState).length;
         var time = new Date().toLocaleTimeString();

@@ -31,7 +31,9 @@
         type: type,
         payload: payload
       }, '*');
-    } catch (e) {}
+    } catch (e) {
+      console.error('[MobX DevTools] postMessage failed:', e.message);
+    }
   }
 
   var hook = {
@@ -55,7 +57,7 @@
       return this;
     },
     
-    // Spy 설정 (throttled)
+    // Spy 설정
     setupSpy: function(mobx) {
       if (!mobx || !mobx.spy) return;
       var self = this;
@@ -64,6 +66,7 @@
       try {
         mobx.spy(function(event) {
           try {
+            // 액션 이벤트
             if (event.type === 'action') {
               actionCount++;
               
@@ -76,23 +79,37 @@
                 timestamp: Date.now()
               });
               
-              // Store 자동 등록 (처음 보는 것만)
-              if (event.object && !self.stores.has(event.object.constructor.name)) {
+              // Store 참조 항상 갱신
+              if (event.object) {
                 var storeName = event.object.constructor.name || 'Store';
-                console.log('[MobX DevTools] Auto-registered store:', storeName);
                 self.stores.set(storeName, event.object);
               }
               
               // 액션 큐 전송 (debounced)
               self.flushActionsDebounced();
             }
+            
+            // Observable 업데이트 이벤트 (중요!)
+            if (event.type === 'update' || event.type === 'add' || event.type === 'delete') {
+              // Observable이 변경되면 즉시 상태 업데이트
+              self.sendStateDebounced();
+            }
           } catch (e) {}
         });
-        console.log('[MobX DevTools] Spy registered');
+        console.log('[MobX DevTools] Spy registered for action & update events');
       } catch (e) {
         console.warn('[MobX DevTools] Spy setup failed:', e);
       }
     },
+    
+    // 상태 전송 (debounced)
+    sendStateDebounced: debounce(function() {
+      var self = window.__MOBX_DEVTOOLS_GLOBAL_HOOK__;
+      if (self) {
+        console.log('[MobX DevTools] Observable changed, sending state...');
+        self.sendState();
+      }
+    }, 300),
     
     // 액션 큐 전송 (debounced) - 500ms 대기
     flushActionsDebounced: debounce(function() {
@@ -134,67 +151,116 @@
     // 상태 전송
     sendState: function() {
       try {
-        var state = {};
         var self = this;
         var storeNames = [];
+        var timestamp = Date.now();
         
+        // 먼저 모든 store 이름 수집
         this.stores.forEach(function(store, name) {
           storeNames.push(name);
+        });
+        
+        console.log('[MobX DevTools] Sending', storeNames.length, 'stores:', storeNames.join(', '));
+        
+        // 모든 store를 모아서 한번에 전송
+        var allStores = {};
+        var index = 0;
+        
+        this.stores.forEach(function(store, name) {
           try {
-            state[name] = self.serialize(store, 0);
+            if (name === 'LocationStore') {
+              console.log('[MobX DevTools] ======= LocationStore Debug =======');
+              console.log('Store object:', store);
+              console.log('Store keys:', Object.keys(store));
+              console.log('locationName:', store.locationName);
+              console.log('locationId:', store.locationId);
+              
+              // toJS 결과
+              if (self.mobx && self.mobx.toJS) {
+                var toJSResult = self.mobx.toJS(store);
+                console.log('toJS result keys:', Object.keys(toJSResult));
+                console.log('toJS locationName:', toJSResult.locationName);
+              }
+              console.log('=====================================');
+            }
+            
+            // toJS로 observable을 일반 객체로 변환 (매번 최신 값)
+            var plain;
+            if (self.mobx && self.mobx.toJS) {
+              try {
+                plain = self.mobx.toJS(store);
+              } catch (e) {
+                console.warn('[MobX DevTools] toJS failed for', name, ', using direct read');
+                plain = self.serialize(store, 0);
+              }
+            } else {
+              plain = self.serialize(store, 0);
+            }
+            
+            allStores[name] = plain;
           } catch (e) {
-            state[name] = { error: 'Serialization failed' };
+            console.error('[MobX DevTools] Failed to serialize', name, ':', e.message);
+            allStores[name] = { error: 'Failed: ' + e.message };
           }
         });
         
-        console.log('[MobX DevTools] Sending state for stores:', storeNames.join(', '));
+        console.log('[MobX DevTools] All stores serialized, sending...');
         
+        // JSON.parse(JSON.stringify())로 함수 완전 제거
+        var cleanState = JSON.parse(JSON.stringify(allStores));
+        
+        // 한번에 전송
         safeSend('STATE_UPDATE', {
-          state: state,
-          timestamp: Date.now()
+          state: cleanState,
+          timestamp: timestamp
         });
+        
+        console.log('[MobX DevTools] State sent');
       } catch (e) {
         console.error('[MobX DevTools] sendState error:', e);
       }
     },
     
-    // 직렬화
+    // 직렬화 - observable 값을 직접 읽기
     serialize: function(obj, depth) {
-      if (depth > 2) return '[Max Depth]';
-      if (obj === null || obj === undefined) return obj;
-      if (typeof obj !== 'object') return obj;
-      if (typeof obj === 'function') return undefined;
-      
       try {
-        if (this.mobx && this.mobx.toJS) {
-          try {
-            return this.mobx.toJS(obj);
-          } catch (e) {}
-        }
+        if (depth > 5) return '[Max Depth]';
+        if (obj === null) return null;
+        if (obj === undefined) return undefined;
+        if (typeof obj !== 'object') return obj;
+        if (typeof obj === 'function') return undefined;
         
         if (Array.isArray(obj)) {
           var self = this;
-          return obj.slice(0, 20).map(function(item) {
-            return self.serialize(item, depth + 1);
+          return obj.slice(0, 50).map(function(item) {
+            try {
+              return self.serialize(item, depth + 1);
+            } catch (e) {
+              return '[Error]';
+            }
           });
         }
         
+        // 객체를 직접 순회하면서 값 읽기 (toJS 대신)
         var result = {};
-        var keys = Object.keys(obj).slice(0, 30);
+        var keys = Object.keys(obj).slice(0, 100);
         var self = this;
         
         keys.forEach(function(key) {
           if (key.charAt(0) === '$' || key.charAt(0) === '_') return;
           try {
+            // 직접 값을 읽음 (getter 실행됨 = 최신 observable 값)
             var value = obj[key];
             if (typeof value === 'function') return;
             result[key] = self.serialize(value, depth + 1);
-          } catch (e) {}
+          } catch (e) {
+            result[key] = '[Error: ' + e.message + ']';
+          }
         });
         
         return result;
       } catch (e) {
-        return '[Error]';
+        return '[Error: ' + e.message + ']';
       }
     }
   };
