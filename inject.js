@@ -38,6 +38,8 @@
     stores: new Map(),
     actionQueue: [], // Action queue
     filteredStores: null, // Filtered store names (null = send all)
+    editingPath: null, // Currently editing path to skip update events
+    editingTimeout: null // Timeout to clear editing state
     
     // Official API: Inject MobX library
     injectMobx: function(mobx) {
@@ -89,6 +91,11 @@
             
             // Observable update event
             if (event.type === 'update' || event.type === 'add' || event.type === 'delete') {
+              // Skip if this is the path being edited
+              if (self.editingPath && event.name && self.editingPath.indexOf(event.name) !== -1) {
+                return;
+              }
+              
               // Only update state if the observable is in a filtered store
               if (!self.filteredStores || self.filteredStores.length > 0) {
                 self.sendStateDebounced();
@@ -205,6 +212,17 @@
           return;
         }
         
+        // Set editing flag to prevent immediate update
+        var fullPath = storeName + '.' + path;
+        this.editingPath = fullPath;
+        
+        // Clear editing flag after 1 second
+        var self = this;
+        clearTimeout(this.editingTimeout);
+        this.editingTimeout = setTimeout(function() {
+          self.editingPath = null;
+        }, 1000);
+        
         // Parse path: "user.name" -> ["user", "name"]
         var keys = path.split('.');
         var target = store;
@@ -233,9 +251,6 @@
         
         target[lastKey] = newValue;
         console.log('[MobX DevTools] Value updated:', path, 'from', oldValue, 'to', newValue);
-        
-        // Don't send state immediately - let observable update trigger it
-        // this.sendState();
       } catch (e) {
         console.error('[MobX DevTools] setValue error:', e);
       }

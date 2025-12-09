@@ -242,20 +242,18 @@
         break;
       
       case 'STATE_UPDATE':
-        currentState = data.payload.state;
+        // Don't update state completely while editing - just refresh display
+        if (!isEditing) {
+          currentState = data.payload.state;
+        }
         
         // Check for new stores
-        const newStoreNames = Object.keys(currentState);
+        const newStoreNames = Object.keys(data.payload.state);
         const hasNewStores = newStoreNames.some(name => !allStoreNames.includes(name));
         
         if (hasNewStores) {
-          // Add new stores to selectedStores by default
-          newStoreNames.forEach(name => {
-            if (!allStoreNames.includes(name)) {
-              selectedStores.add(name);
-            }
-          });
-          saveSelectedStores();
+          // Don't auto-add new stores to selection anymore
+          // User must manually select them
           
           // Update filter if visible
           const filterDiv = document.getElementById('storeFilter');
@@ -264,10 +262,13 @@
           }
         }
         
-        var storeCount = Object.keys(currentState).length;
+        var storeCount = Object.keys(data.payload.state).length;
         var time = new Date().toLocaleTimeString();
         document.getElementById('lastUpdate').textContent = `${storeCount} stores | ${time}`;
-        renderState();
+        
+        if (!isEditing) {
+          renderState();
+        }
         break;
       
       case 'ACTION':
@@ -376,12 +377,6 @@
 
   // Render state (filtered by selected stores)
   function renderState() {
-    // Skip rendering if user is editing
-    if (isEditing) {
-      console.log('[MobX DevTools] Skipping render - user is editing');
-      return;
-    }
-    
     const container = document.getElementById('stateTree');
     if (Object.keys(currentState).length === 0) {
       container.innerHTML = '<div class="empty-state">No state available</div>';
@@ -391,27 +386,18 @@
     // Filter state by selected stores
     const filteredState = {};
     Object.keys(currentState).forEach(storeName => {
-      // Skip the store being edited
-      if (editingStoreName === storeName) {
-        return;
-      }
-      
       // Show only selected stores (no default selection)
       if (selectedStores.has(storeName)) {
         filteredState[storeName] = currentState[storeName];
       }
     });
     
-    if (Object.keys(filteredState).length === 0 && !editingStoreName) {
+    if (Object.keys(filteredState).length === 0) {
       container.innerHTML = '<div class="empty-state">No stores selected. Click "Filter Stores" to select stores.</div>';
       return;
     }
     
-    // Don't clear container if editing - just update non-editing stores
-    if (!editingStoreName) {
-      container.innerHTML = '';
-    }
-    
+    container.innerHTML = '';
     renderTree(container, filteredState, 0, '');
   }
 
@@ -605,15 +591,7 @@
     
     const finishEdit = (save) => {
       if (save && input.value !== displayValue.toString()) {
-        // Send SET_VALUE message to inject.js
-        sendToPage({
-          type: 'SET_VALUE',
-          storeName: storeName,
-          path: path,
-          value: input.value
-        });
-        
-        // Update local state immediately to prevent flicker
+        // Update local state immediately
         try {
           const keys = path.split('.');
           let target = currentState[storeName];
@@ -633,7 +611,24 @@
           }
           
           target[lastKey] = newValue;
-        } catch (e) {}
+          
+          // Update element text immediately
+          if (typeof newValue === 'string') {
+            element.textContent = `"${newValue}"`;
+          } else {
+            element.textContent = newValue;
+          }
+          
+          // Send SET_VALUE message to inject.js
+          sendToPage({
+            type: 'SET_VALUE',
+            storeName: storeName,
+            path: path,
+            value: input.value
+          });
+        } catch (e) {
+          console.error('[MobX DevTools] Failed to update local state:', e);
+        }
       }
       
       input.remove();
@@ -642,9 +637,6 @@
       // Mark editing as complete
       isEditing = false;
       editingStoreName = null;
-      
-      // Force render to update all stores
-      renderState();
     };
     
     input.addEventListener('blur', () => finishEdit(true));
