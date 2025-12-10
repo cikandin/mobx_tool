@@ -1,6 +1,6 @@
 # MobX DevTools
 
-A Chrome extension to track and debug MobX state like Redux DevTools.
+A Chrome extension to track and debug MobX state.
 
 ## Features
 
