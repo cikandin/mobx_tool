@@ -31,9 +31,7 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
         type: type,
         payload: payload
       }, '*');
-    } catch (e) {
-      console.error('[MobX DevTools] postMessage failed:', e.message);
-    }
+    } catch (e) {}
   }
 
   // Map stack trace using source maps (async)
@@ -81,7 +79,6 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
       var shouldSend = action.isFiltered || action.changes.length > 0;
       
       if (shouldSend) {
-        // Map stack trace asynchronously then send
         var rawStack = action.stackTrace || '';
         
         mapStack(rawStack).then(function(mappedStack) {
@@ -115,18 +112,15 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
       try {
         mobx.spy(function(event) {
           try {
-            // Track depth for all spyReportStart events
             if (event.spyReportStart) {
               self.reportEndDepth++;
             }
             
             // Action START
             if (event.type === 'action' && event.spyReportStart) {
-              // Parse store name from action name: 'FleetStore@21.setLocationRoleOfRobot'
               var storeName = 'Unknown';
               var actionName = event.name || '';
               
-              // Extract store name from action name
               var atIndex = actionName.indexOf('@');
               if (atIndex > 0) {
                 storeName = actionName.substring(0, atIndex);
@@ -134,23 +128,19 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
                 storeName = event.object.constructor.name || 'Store';
               }
               
-              // Always register store (for store list)
               if (event.object && storeName !== 'Unknown') {
                 self.stores.set(storeName, event.object);
               }
               
-              // Check if this store is filtered
               var isFiltered = self.filteredStores && 
                                self.filteredStores.length > 0 && 
                                self.filteredStores.includes(storeName);
               
-              // Capture raw stack trace (will be mapped when sending)
               var stackTrace = '';
               try {
                 throw new Error();
               } catch (e) {
                 stackTrace = e.stack || '';
-                // Remove first few lines (Error, this function, mobx internals)
                 var lines = stackTrace.split('\n');
                 var filteredLines = lines.filter(function(line, idx) {
                   if (idx < 3) return false;
@@ -162,7 +152,6 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
                 stackTrace = filteredLines.join('\n');
               }
               
-              // Serialize arguments
               var args = [];
               try {
                 if (event.arguments && event.arguments.length > 0) {
@@ -179,7 +168,6 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
                 args = ['[serialization error]'];
               }
               
-              // Push new action to stack with its start depth
               self.actionCount++;
               self.actionStack.push({
                 id: Date.now() + '-' + self.actionCount,
@@ -194,15 +182,13 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
               });
             }
             
-            // Report END - check if this closes an action
+            // Report END
             if (event.type === 'report-end') {
               self.reportEndDepth--;
               
-              // Check if top action's depth matches current depth
               if (self.actionStack.length > 0) {
                 var topAction = self.actionStack[self.actionStack.length - 1];
                 if (topAction.startDepth === self.reportEndDepth) {
-                  // This report-end closes the top action
                   self.actionStack.pop();
                   
                   var shouldSend = topAction.isFiltered || topAction.changes.length > 0;
@@ -213,14 +199,12 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
               }
             }
             
-            // Observable changes (update/add/delete with spyReportStart)
+            // Observable changes
             if ((event.type === 'update' || event.type === 'add' || event.type === 'delete') && event.spyReportStart) {
-              // Skip if editing
               if (self.editingPath && event.name && self.editingPath.indexOf(event.name) !== -1) {
                 return;
               }
               
-              // Get store name from debugObjectName
               var changeStoreName = null;
               if (event.debugObjectName) {
                 var match = event.debugObjectName.match(/^([^@]+)/);
@@ -230,30 +214,24 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
                 changeStoreName = event.object.constructor.name;
               }
               
-              // Skip non-store objects
               if (!changeStoreName || changeStoreName === 'Object' || changeStoreName === 'Array') {
                 return;
               }
               
-              // Register store (always, for store list)
               if (event.object) {
                 self.stores.set(changeStoreName, event.object);
               }
               
-              // Always update state panel (regardless of filter)
               self.sendStateDebounced();
               
-              // Check if store is filtered for action tracking
               var isFiltered = self.filteredStores && 
                                self.filteredStores.length > 0 && 
                                self.filteredStores.includes(changeStoreName);
               
-              // Only track changes for filtered stores in actions
               if (!isFiltered) {
                 return;
               }
               
-              // Find the parent action in stack
               var currentAction = self.getCurrentAction();
               
               if (currentAction) {
@@ -264,7 +242,6 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
                   observableKind: event.observableKind || ''
                 };
                 
-                // MobX spy already provides oldValue/newValue
                 try {
                   if (self.mobx && self.mobx.toJS) {
                     change.oldValue = self.mobx.toJS(event.oldValue);
@@ -361,9 +338,7 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
           state: cleanState,
           timestamp: timestamp
         });
-      } catch (e) {
-        console.error('[MobX DevTools] sendState error:', e);
-      }
+      } catch (e) {}
     },
     
     // Parse path
@@ -411,10 +386,7 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
     setValue: function(storeName, path, value) {
       try {
         var store = this.stores.get(storeName);
-        if (!store) {
-          console.error('[MobX DevTools] Store not found:', storeName);
-          return;
-        }
+        if (!store) return;
         
         var fullPath = storeName + '.' + path;
         this.editingPath = fullPath;
@@ -434,17 +406,11 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
         }
         
         for (var i = startIndex; i < keys.length - 1; i++) {
-          if (target === null || target === undefined) {
-            console.error('[MobX DevTools] Invalid path at:', keys.slice(0, i + 1));
-            return;
-          }
+          if (target === null || target === undefined) return;
           target = target[keys[i]];
         }
         
-        if (target === null || target === undefined) {
-          console.error('[MobX DevTools] Invalid path:', path);
-          return;
-        }
+        if (target === null || target === undefined) return;
         
         var lastKey = keys[keys.length - 1];
         var oldValue = target[lastKey];
@@ -458,10 +424,7 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
         }
         
         target[lastKey] = newValue;
-        console.log('[MobX DevTools] Value updated:', path, 'from', oldValue, 'to', newValue);
-      } catch (e) {
-        console.error('[MobX DevTools] setValue error:', e);
-      }
+      } catch (e) {}
     },
     
     // Serialize
@@ -495,13 +458,13 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
             if (typeof value === 'function') return;
             result[key] = self.serialize(value, depth + 1);
           } catch (e) {
-            result[key] = '[Error: ' + e.message + ']';
+            result[key] = '[Error]';
           }
         });
         
         return result;
       } catch (e) {
-        return '[Error: ' + e.message + ']';
+        return '[Error]';
       }
     }
   };
@@ -570,4 +533,3 @@ import { mapStackTrace } from 'sourcemapped-stacktrace';
   setTimeout(function() { detectExistingMobX(); }, 2000);
   
 })();
-
