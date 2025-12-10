@@ -36,11 +36,11 @@
   var hook = {
     mobx: null,
     stores: new Map(),
-    actionQueue: [], // Action queue
     actionCount: 0, // Global action counter for unique IDs
     filteredStores: null, // Filtered store names (null = send all)
     editingPath: null, // Currently editing path to skip update events
     editingTimeout: null, // Timeout to clear editing state
+    actionStack: [], // Stack of { id, info, changes, storeName }
     
     // Official API: Inject MobX library
     injectMobx: function(mobx) {
@@ -63,67 +63,170 @@
       try {
         mobx.spy(function(event) {
           try {
-            // Action event
-            if (event.type === 'action') {
-              if (event.object) {
-                var storeName = event.object.constructor.name || 'Store';
-                
-                // Always register/update store reference (needed for store list)
+            // ACTION START - spyReportStart: true
+            if (event.type === 'action' && event.spyReportStart) {
+              var storeName = 'Unknown';
+              
+              if (event.object && event.object.constructor) {
+                storeName = event.object.constructor.name || 'Store';
+              }
+              if (event.debugObjectName) {
+                var match = event.debugObjectName.match(/^([^@]+)/);
+                if (match) storeName = match[1];
+              }
+              
+              // Always register store
+              if (event.object && storeName !== 'Unknown') {
                 self.stores.set(storeName, event.object);
+              }
+              
+              // Check if should record
+              var shouldRecord = self.filteredStores && 
+                                 self.filteredStores.length > 0 && 
+                                 self.filteredStores.includes(storeName);
+              
+              if (shouldRecord) {
+                self.actionCount++;
+                var actionId = Date.now() + '-' + self.actionCount;
                 
-                // Only record actions from filtered stores
-                // If filteredStores is null or empty, don't subscribe to any actions
-                var shouldRecord = self.filteredStores && 
-                                   self.filteredStores.length > 0 && 
-                                   self.filteredStores.includes(storeName);
+                // Push to stack
+                self.actionStack.push({
+                  id: actionId,
+                  name: event.name,
+                  storeName: storeName,
+                  timestamp: Date.now(),
+                  changes: []
+                });
+              } else {
+                // Push placeholder for non-recorded action (to maintain stack balance)
+                self.actionStack.push(null);
+              }
+            }
+            
+            // ACTION END - spyReportEnd: true
+            if (event.type === 'action' && event.spyReportEnd) {
+              if (self.actionStack.length > 0) {
+                var action = self.actionStack.pop();
                 
-                if (shouldRecord) {
-                  self.actionCount++;
-                  
-                  // Create unique ID: timestamp + counter for uniqueness
-                  var uniqueId = Date.now() + '-' + self.actionCount;
-                  
-                  // Add action to queue
-                  self.actionQueue.push({
-                    id: uniqueId,
-                    name: event.name,
-                    type: event.type,
-                    object: storeName,
-                    timestamp: Date.now()
+                // Send if it was a recorded action
+                if (action !== null) {
+                  safeSend('ACTION', {
+                    id: action.id,
+                    name: action.name,
+                    type: 'action',
+                    object: action.storeName,
+                    timestamp: action.timestamp,
+                    changes: action.changes
                   });
-                  
-                  // Flush actions queue (debounced)
-                  self.flushActionsDebounced();
                 }
               }
             }
             
-            // Observable update event
+            // FALLBACK: Action without spyReportStart/End (older MobX)
+            if (event.type === 'action' && !event.spyReportStart && !event.spyReportEnd) {
+              var storeName = 'Unknown';
+              
+              if (event.object && event.object.constructor) {
+                storeName = event.object.constructor.name || 'Store';
+              }
+              if (event.debugObjectName) {
+                var match = event.debugObjectName.match(/^([^@]+)/);
+                if (match) storeName = match[1];
+              }
+              
+              if (event.object && storeName !== 'Unknown') {
+                self.stores.set(storeName, event.object);
+              }
+              
+              var shouldRecord = self.filteredStores && 
+                                 self.filteredStores.length > 0 && 
+                                 self.filteredStores.includes(storeName);
+              
+              if (shouldRecord) {
+                self.actionCount++;
+                safeSend('ACTION', {
+                  id: Date.now() + '-' + self.actionCount,
+                  name: event.name,
+                  type: 'action',
+                  object: storeName,
+                  timestamp: Date.now(),
+                  changes: [] // No change tracking for fallback
+                });
+              }
+            }
+            
+            // Observable changes - add to current action
             if (event.type === 'update' || event.type === 'add' || event.type === 'delete') {
-              // Skip if this is the path being edited
+              // Skip if editing
               if (self.editingPath && event.name && self.editingPath.indexOf(event.name) !== -1) {
                 return;
               }
               
-              // Always try to register store from observable update event (needed for store list)
-              // event.object might be a store instance
-              if (event.object && event.object.constructor && event.object.constructor.name) {
-                var storeName = event.object.constructor.name;
-                // Only register if it looks like a store (has constructor name, not just 'Object')
-                if (storeName !== 'Object' && storeName !== 'Array') {
-                  self.stores.set(storeName, event.object);
+              // Get store name
+              var changeStoreName = null;
+              if (event.debugObjectName) {
+                var match = event.debugObjectName.match(/^([^@]+)/);
+                if (match) changeStoreName = match[1];
+              }
+              if (!changeStoreName && event.object && event.object.constructor) {
+                changeStoreName = event.object.constructor.name;
+              }
+              
+              // Register store
+              if (changeStoreName && changeStoreName !== 'Object' && changeStoreName !== 'Array') {
+                if (event.object) {
+                  self.stores.set(changeStoreName, event.object);
                 }
               }
               
-              // Only update state if filter is set and has stores (spy event processing is filtered)
-              // If filteredStores is null or empty, don't subscribe to observable updates
-              if (self.filteredStores && self.filteredStores.length > 0) {
-                // Check if the store is in the filter before sending state update
-                if (event.object && event.object.constructor && event.object.constructor.name) {
-                  var storeName = event.object.constructor.name;
-                  if (self.filteredStores.includes(storeName)) {
-                    self.sendStateDebounced();
+              // Find the innermost recorded action in stack
+              var currentAction = null;
+              for (var i = self.actionStack.length - 1; i >= 0; i--) {
+                if (self.actionStack[i] !== null) {
+                  currentAction = self.actionStack[i];
+                  break;
+                }
+              }
+              
+              // Add change to current action if exists
+              if (currentAction) {
+                var change = {
+                  type: event.type,
+                  name: event.name || '',
+                  store: changeStoreName,
+                  observableKind: event.observableKind || 'unknown',
+                  oldValue: undefined,
+                  newValue: undefined
+                };
+                
+                try {
+                  if (event.type === 'update') {
+                    change.oldValue = event.oldValue;
+                    change.newValue = event.newValue;
+                    if (self.mobx && self.mobx.toJS) {
+                      try { change.oldValue = self.mobx.toJS(event.oldValue); } catch(e) {}
+                      try { change.newValue = self.mobx.toJS(event.newValue); } catch(e) {}
+                    }
+                  } else if (event.type === 'add') {
+                    change.newValue = event.newValue;
+                    if (self.mobx && self.mobx.toJS) {
+                      try { change.newValue = self.mobx.toJS(event.newValue); } catch(e) {}
+                    }
+                  } else if (event.type === 'delete') {
+                    change.oldValue = event.oldValue;
+                    if (self.mobx && self.mobx.toJS) {
+                      try { change.oldValue = self.mobx.toJS(event.oldValue); } catch(e) {}
+                    }
                   }
+                  change = JSON.parse(JSON.stringify(change));
+                  currentAction.changes.push(change);
+                } catch (e) {}
+              }
+              
+              // Update state panel
+              if (self.filteredStores && self.filteredStores.length > 0) {
+                if (changeStoreName && self.filteredStores.includes(changeStoreName)) {
+                  self.sendStateDebounced();
                 }
               }
             }

@@ -280,6 +280,57 @@ body {
   font-size: 10px;
 }
 
+/* Diff styles */
+.diff-item {
+  padding: 8px;
+  margin-bottom: 4px;
+  border-radius: 2px;
+  background: #f9f9f9;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+}
+
+.diff-item.diff-added,
+.diff-item.diff-add {
+  border-left: 3px solid #4caf50;
+}
+
+.diff-item.diff-removed,
+.diff-item.diff-delete {
+  border-left: 3px solid #f44336;
+}
+
+.diff-item.diff-modified,
+.diff-item.diff-update {
+  border-left: 3px solid #ff9800;
+}
+
+.diff-path {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.change-kind {
+  font-size: 9px;
+  font-weight: normal;
+  color: #666;
+  background: #e0e0e0;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.diff-added {
+  color: #4caf50;
+}
+
+.diff-removed {
+  color: #f44336;
+}
+
 .action-detail-tabs {
   display: flex;
   border-bottom: 1px solid #ddd;

@@ -28,7 +28,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["inject.js"],
+      "resources": ["inject.js", "panel/*"],
       "matches": ["<all_urls>"]
     }
   ]
