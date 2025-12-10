@@ -39,7 +39,7 @@
     actionQueue: [], // Action queue
     filteredStores: null, // Filtered store names (null = send all)
     editingPath: null, // Currently editing path to skip update events
-    editingTimeout: null // Timeout to clear editing state
+    editingTimeout: null, // Timeout to clear editing state
     
     // Official API: Inject MobX library
     injectMobx: function(mobx) {
