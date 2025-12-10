@@ -156,18 +156,9 @@
         var timestamp = Date.now();
         var allStores = {};
         
-        // If filter is empty array, don't send anything
-        if (self.filteredStores && self.filteredStores.length === 0) {
-          safeSend('STATE_UPDATE', {
-            state: {},
-            timestamp: timestamp
-          });
-          return;
-        }
-        
         this.stores.forEach(function(store, name) {
           // Skip if filtered and not in the filter list
-          if (self.filteredStores && !self.filteredStores.includes(name)) {
+          if (self.filteredStores && self.filteredStores.length > 0 && !self.filteredStores.includes(name)) {
             return;
           }
           
@@ -353,7 +344,7 @@
         } else if (event.data.type === 'SET_FILTER') {
           // Update filtered stores list
           hook.filteredStores = event.data.payload.stores;
-          hook.sendState(); // Send immediately with new filter
+          // Don't send state immediately - let next update cycle handle it
         } else if (event.data.type === 'SET_VALUE') {
           // Set observable value
           hook.setValue(event.data.payload.storeName, event.data.payload.path, event.data.payload.value);

@@ -25,11 +25,8 @@
   
   // Send filter to page after connection
   function sendFilterToPage() {
-    // Always send filter (empty array = no stores selected)
-    sendToPage({
-      type: 'SET_FILTER',
-      stores: Array.from(selectedStores)
-    });
+    // Don't send filter on initial connection - show all stores first
+    // User will manually filter if needed
   }
 
   // Save selected stores to localStorage
@@ -37,11 +34,19 @@
     try {
       localStorage.setItem('mobx-devtools-selected-stores', JSON.stringify(Array.from(selectedStores)));
       
-      // Send filter to inject.js
-      sendToPage({
-        type: 'SET_FILTER',
-        stores: Array.from(selectedStores)
-      });
+      // Send filter to inject.js only if there are selections
+      if (selectedStores.size > 0) {
+        sendToPage({
+          type: 'SET_FILTER',
+          stores: Array.from(selectedStores)
+        });
+      } else {
+        // Clear filter - show all stores
+        sendToPage({
+          type: 'SET_FILTER',
+          stores: null
+        });
+      }
     } catch (e) {}
   }
 
@@ -386,14 +391,14 @@
     // Filter state by selected stores
     const filteredState = {};
     Object.keys(currentState).forEach(storeName => {
-      // Show only selected stores (no default selection)
-      if (selectedStores.has(storeName)) {
+      // Show only selected stores, or all if none selected
+      if (selectedStores.size === 0 || selectedStores.has(storeName)) {
         filteredState[storeName] = currentState[storeName];
       }
     });
     
     if (Object.keys(filteredState).length === 0) {
-      container.innerHTML = '<div class="empty-state">No stores selected. Click "Filter Stores" to select stores.</div>';
+      container.innerHTML = '<div class="empty-state">No stores available</div>';
       return;
     }
     
