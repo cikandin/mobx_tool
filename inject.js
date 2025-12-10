@@ -37,6 +37,7 @@
     mobx: null,
     stores: new Map(),
     actionQueue: [], // Action queue
+    actionCount: 0, // Global action counter for unique IDs
     filteredStores: null, // Filtered store names (null = send all)
     editingPath: null, // Currently editing path to skip update events
     editingTimeout: null, // Timeout to clear editing state
@@ -58,25 +59,33 @@
     setupSpy: function(mobx) {
       if (!mobx || !mobx.spy) return;
       var self = this;
-      var actionCount = 0;
       
       try {
         mobx.spy(function(event) {
           try {
             // Action event
             if (event.type === 'action') {
-              // Always update store reference
               if (event.object) {
                 var storeName = event.object.constructor.name || 'Store';
+                
+                // Always register/update store reference (needed for store list)
                 self.stores.set(storeName, event.object);
                 
-                // Only record action if store is in filter (or no filter set)
-                if (!self.filteredStores || self.filteredStores.includes(storeName)) {
-                  actionCount++;
+                // Only record actions from filtered stores
+                // If filteredStores is null or empty, don't subscribe to any actions
+                var shouldRecord = self.filteredStores && 
+                                   self.filteredStores.length > 0 && 
+                                   self.filteredStores.includes(storeName);
+                
+                if (shouldRecord) {
+                  self.actionCount++;
+                  
+                  // Create unique ID: timestamp + counter for uniqueness
+                  var uniqueId = Date.now() + '-' + self.actionCount;
                   
                   // Add action to queue
                   self.actionQueue.push({
-                    id: actionCount,
+                    id: uniqueId,
                     name: event.name,
                     type: event.type,
                     object: storeName,
@@ -96,9 +105,26 @@
                 return;
               }
               
-              // Only update state if the observable is in a filtered store
-              if (!self.filteredStores || self.filteredStores.length > 0) {
-                self.sendStateDebounced();
+              // Always try to register store from observable update event (needed for store list)
+              // event.object might be a store instance
+              if (event.object && event.object.constructor && event.object.constructor.name) {
+                var storeName = event.object.constructor.name;
+                // Only register if it looks like a store (has constructor name, not just 'Object')
+                if (storeName !== 'Object' && storeName !== 'Array') {
+                  self.stores.set(storeName, event.object);
+                }
+              }
+              
+              // Only update state if filter is set and has stores (spy event processing is filtered)
+              // If filteredStores is null or empty, don't subscribe to observable updates
+              if (self.filteredStores && self.filteredStores.length > 0) {
+                // Check if the store is in the filter before sending state update
+                if (event.object && event.object.constructor && event.object.constructor.name) {
+                  var storeName = event.object.constructor.name;
+                  if (self.filteredStores.includes(storeName)) {
+                    self.sendStateDebounced();
+                  }
+                }
               }
             }
           } catch (e) {}
@@ -157,10 +183,8 @@
         var allStores = {};
         
         this.stores.forEach(function(store, name) {
-          // Skip if filtered and not in the filter list
-          if (self.filteredStores && self.filteredStores.length > 0 && !self.filteredStores.includes(name)) {
-            return;
-          }
+          // Always send all stores so UI can show the list for filtering
+          // Filtering is done in the UI, not here
           
           try {
             // Convert observable to plain object using toJS (always get latest value)
@@ -194,6 +218,52 @@
       }
     },
     
+    // Parse path to handle both object keys and array indices
+    // Examples: "user.name" -> ["user", "name"]
+    //           "[0].locationName" -> [0, "locationName"]
+    //           "items[0].name" -> ["items", 0, "name"]
+    parsePath: function(path) {
+      var parts = [];
+      var current = '';
+      var i = 0;
+      
+      while (i < path.length) {
+        if (path[i] === '[') {
+          // Array index
+          if (current) {
+            parts.push(current);
+            current = '';
+          }
+          i++; // Skip '['
+          var index = '';
+          while (i < path.length && path[i] !== ']') {
+            index += path[i];
+            i++;
+          }
+          if (index !== '') {
+            parts.push(parseInt(index, 10));
+          }
+          i++; // Skip ']'
+        } else if (path[i] === '.') {
+          // Object key separator
+          if (current) {
+            parts.push(current);
+            current = '';
+          }
+          i++;
+        } else {
+          current += path[i];
+          i++;
+        }
+      }
+      
+      if (current) {
+        parts.push(current);
+      }
+      
+      return parts;
+    },
+    
     // Set value in observable store
     setValue: function(storeName, path, value) {
       try {
@@ -214,17 +284,28 @@
           self.editingPath = null;
         }, 1000);
         
-        // Parse path: "user.name" -> ["user", "name"]
-        var keys = path.split('.');
+        // Parse path with array index support
+        var keys = this.parsePath(path);
         var target = store;
         
+        // If first key matches storeName, remove it (path includes storeName)
+        var startIndex = 0;
+        if (keys.length > 0 && keys[0] === storeName) {
+          startIndex = 1;
+        }
+        
         // Navigate to the parent object
-        for (var i = 0; i < keys.length - 1; i++) {
-          target = target[keys[i]];
-          if (!target || typeof target !== 'object') {
-            console.error('[MobX DevTools] Invalid path:', path);
+        for (var i = startIndex; i < keys.length - 1; i++) {
+          if (target === null || target === undefined) {
+            console.error('[MobX DevTools] Invalid path at:', keys.slice(0, i + 1));
             return;
           }
+          target = target[keys[i]];
+        }
+        
+        if (target === null || target === undefined) {
+          console.error('[MobX DevTools] Invalid path:', path);
+          return;
         }
         
         // Set the value
@@ -365,5 +446,12 @@
       }
     } catch (e) {}
   }, 10000);
+  
+  // Periodic store detection (every 30 seconds) - scan for new stores
+  setInterval(function() {
+    try {
+      detectExistingMobX();
+    } catch (e) {}
+  }, 30000);
   
 })();

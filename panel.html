@@ -19,7 +19,6 @@
     <div class="tabs">
       <button class="tab-button active" data-tab="state">State</button>
       <button class="tab-button" data-tab="actions">Actions</button>
-      <button class="tab-button" data-tab="observables">Observables</button>
     </div>
 
     <div class="tab-content active" id="stateTab">
@@ -34,17 +33,24 @@
     </div>
 
     <div class="tab-content" id="actionsTab">
-      <div class="toolbar">
-        <button id="clearActions" class="btn">Clear Log</button>
-        <label>
-          <input type="checkbox" id="autoScroll"> Auto Scroll
-        </label>
+      <div class="actions-container">
+        <div class="actions-panel-left">
+          <div class="actions-toolbar">
+            <input type="text" id="actionFilter" placeholder="filter..." class="action-filter-input">
+            <button id="clearActions" class="btn">Clear</button>
+          </div>
+          <div id="actionsList" class="actions-list"></div>
+        </div>
+        <div class="actions-panel-right">
+          <div class="action-detail-tabs">
+            <button class="action-detail-tab active" data-detail-tab="state">State</button>
+            <button class="action-detail-tab" data-detail-tab="diff">Diff</button>
+          </div>
+          <div id="actionDetailContent" class="action-detail-content">
+            <div class="empty-state">Select an action to view details</div>
+          </div>
+        </div>
       </div>
-      <div id="actionsList" class="actions-list"></div>
-    </div>
-
-    <div class="tab-content" id="observablesTab">
-      <div id="observablesList" class="observables-list"></div>
     </div>
   </div>
 

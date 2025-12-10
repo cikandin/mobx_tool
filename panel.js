@@ -4,7 +4,6 @@
 
   let currentState = {};
   let actions = [];
-  let observables = [];
   let connectionPort = null;
   let autoScroll = true;
   let expandedPaths = new Set(); // Track expanded node paths
@@ -12,6 +11,9 @@
   let allStoreNames = []; // All available store names
   let isEditing = false; // Track if user is currently editing a value
   let editingStoreName = null; // Track which store is being edited
+  let selectedAction = null; // Track selected action
+  let actionStates = new Map(); // Store state snapshots for each action
+  let actionFilter = ''; // Filter text for actions
 
   // Load selected stores from localStorage
   function loadSelectedStores() {
@@ -25,8 +27,20 @@
   
   // Send filter to page after connection
   function sendFilterToPage() {
-    // Don't send filter on initial connection - show all stores first
-    // User will manually filter if needed
+    // Send current filter state to inject.js
+    // If no stores selected (default), send empty array to unsubscribe from all actions
+    if (selectedStores.size > 0) {
+      sendToPage({
+        type: 'SET_FILTER',
+        stores: Array.from(selectedStores)
+      });
+    } else {
+      // No stores selected - unsubscribe from all actions
+      sendToPage({
+        type: 'SET_FILTER',
+        stores: []
+      });
+    }
   }
 
   // Save selected stores to localStorage
@@ -34,17 +48,18 @@
     try {
       localStorage.setItem('mobx-devtools-selected-stores', JSON.stringify(Array.from(selectedStores)));
       
-      // Send filter to inject.js only if there are selections
+      // Send filter to inject.js
+      // If no stores selected, send empty array to unsubscribe from all actions
       if (selectedStores.size > 0) {
         sendToPage({
           type: 'SET_FILTER',
           stores: Array.from(selectedStores)
         });
       } else {
-        // Clear filter - show all stores
+        // No stores selected - unsubscribe from all actions
         sendToPage({
           type: 'SET_FILTER',
-          stores: null
+          stores: []
         });
       }
     } catch (e) {}
@@ -96,13 +111,30 @@
   // Clear action log
   document.getElementById('clearActions').addEventListener('click', () => {
     actions = [];
+    actionStates.clear();
+    selectedAction = null;
+    renderActions();
+    renderActionDetail();
+  });
+  
+  // Action filter
+  document.getElementById('actionFilter').addEventListener('input', (e) => {
+    actionFilter = e.target.value.toLowerCase();
     renderActions();
   });
-
-  // Toggle auto scroll
-  document.getElementById('autoScroll').addEventListener('change', (e) => {
-    autoScroll = e.target.checked;
+  
+  // Action detail tabs
+  document.querySelectorAll('.action-detail-tab').forEach(button => {
+    button.addEventListener('click', () => {
+      const tabName = button.dataset.detailTab;
+      document.querySelectorAll('.action-detail-tab').forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      renderActionDetail(tabName);
+    });
   });
+
+  // Toggle auto scroll (removed from UI, keeping functionality)
+  // autoScroll is now always true by default
 
   // 현재 탭 ID 가져오기 (DevTools API 사용)
   window.currentTabId = chrome.devtools.inspectedWindow.tabId;
@@ -136,7 +168,6 @@
 
       // Port 메시지 리스너
       port.onMessage.addListener((message) => {
-        console.log('[MobX DevTools Panel] Received message:', message.type);
         if (message.type === 'MOBX_MESSAGE') {
           handleMobXMessage(message.payload);
         } else {
@@ -249,7 +280,35 @@
       case 'STATE_UPDATE':
         // Don't update state completely while editing - just refresh display
         if (!isEditing) {
+          const previousState = JSON.parse(JSON.stringify(currentState));
           currentState = data.payload.state;
+          
+          // Find the most recent action that doesn't have an after state yet
+          // This ensures each action gets its own state snapshot
+          for (let i = actions.length - 1; i >= 0; i--) {
+            const action = actions[i];
+            const state = actionStates.get(action.id);
+            if (state && !state.after) {
+              // This action's after state hasn't been set yet
+              // Use currentState (which is the new state after the action) as after
+              state.after = JSON.parse(JSON.stringify(currentState));
+              
+              console.log('[MobX DevTools] Updated after state for action:', {
+                actionId: action.id,
+                actionName: action.name,
+                actionStore: action.object,
+                hasAfter: !!state.after,
+                afterStoreKeys: state.after ? Object.keys(state.after) : [],
+                afterStoreData: state.after && action.object ? state.after[action.object] : null
+              });
+              
+              // Update detail view if this action is selected
+              if (selectedAction && String(selectedAction.id) === String(action.id)) {
+                renderActionDetail();
+              }
+              break; // Only update the most recent pending action
+            }
+          }
         }
         
         // Check for new stores
@@ -277,10 +336,23 @@
         break;
       
       case 'ACTION':
-        console.log('[MobX DevTools Panel] ACTION received:', data.payload);
+        // Save current state as before state for this action
+        // This captures the state right before this action executes
+        const beforeState = JSON.parse(JSON.stringify(currentState));
+        
         actions.push(data.payload);
+        
+        // Save before state for this action
+        // after will be set when the next STATE_UPDATE arrives
+        actionStates.set(data.payload.id, {
+          before: beforeState,
+          after: null // Will be updated when STATE_UPDATE arrives
+        });
+        
         // 액션이 너무 많으면 오래된 것 삭제
         if (actions.length > 200) {
+          const removed = actions.slice(0, -100);
+          removed.forEach(action => actionStates.delete(action.id));
           actions = actions.slice(-100);
         }
         renderActions();
@@ -290,20 +362,26 @@
         break;
       
       case 'ACTIONS_BATCH':
-        console.log('[MobX DevTools Panel] ACTIONS_BATCH received:', data.payload.actions.length);
+        // For batch actions, we don't have before states, so we'll use current state
+        const batchBeforeState = JSON.parse(JSON.stringify(currentState));
+        data.payload.actions.forEach(action => {
+          actionStates.set(action.id, {
+            before: batchBeforeState,
+            after: null
+          });
+        });
+        
         actions = actions.concat(data.payload.actions);
         // 액션이 너무 많으면 오래된 것 삭제
         if (actions.length > 200) {
+          const removed = actions.slice(0, -100);
+          removed.forEach(action => actionStates.delete(action.id));
           actions = actions.slice(-100);
         }
         renderActions();
         if (autoScroll) {
           scrollToBottom('actionsList');
         }
-        break;
-      
-      case 'OBSERVABLE_UPDATE':
-        addObservableUpdate(data.payload);
         break;
       
       case 'ACTIONS_UPDATE':
@@ -389,10 +467,10 @@
     }
     
     // Filter state by selected stores
+    // Only show stores that are selected (if none selected, show nothing)
     const filteredState = {};
     Object.keys(currentState).forEach(storeName => {
-      // Show only selected stores, or all if none selected
-      if (selectedStores.size === 0 || selectedStores.has(storeName)) {
+      if (selectedStores.has(storeName)) {
         filteredState[storeName] = currentState[storeName];
       }
     });
@@ -417,7 +495,8 @@
       return;
     }
 
-    if (typeof obj !== 'object' || Array.isArray(obj)) {
+    // Handle primitive values (not objects/arrays)
+    if (typeof obj !== 'object' || obj === null) {
       const node = document.createElement('div');
       node.className = 'tree-node';
       node.style.marginLeft = `${depth * 16}px`;
@@ -436,8 +515,6 @@
       } else if (typeof obj === 'boolean') {
         className = 'tree-boolean';
         editable = true;
-      } else if (Array.isArray(obj)) {
-        value = `[${obj.length} items]`;
       }
       
       const valueSpan = document.createElement('span');
@@ -456,16 +533,25 @@
       return;
     }
 
-    Object.keys(obj).forEach(key => {
+    // Handle arrays and objects
+    const keys = Array.isArray(obj) ? obj.map((_, i) => i) : Object.keys(obj);
+    
+    keys.forEach(key => {
       const node = document.createElement('div');
       node.className = 'tree-node';
       node.style.marginLeft = `${depth * 16}px`;
       
       const value = obj[key];
-      const currentPath = path ? `${path}.${key}` : key;
+      // Build path: for arrays use [index], for objects use .key
+      let currentPath;
+      if (Array.isArray(obj)) {
+        currentPath = path ? `${path}[${key}]` : `[${key}]`;
+      } else {
+        currentPath = path ? `${path}.${key}` : key;
+      }
       // At depth 0, key is the storeName
       const currentStoreName = depth === 0 ? key : storeName;
-      const isExpandable = typeof value === 'object' && value !== null && !Array.isArray(value);
+      const isExpandable = typeof value === 'object' && value !== null;
       
       if (isExpandable) {
         const toggle = document.createElement('span');
@@ -501,14 +587,14 @@
         // Use createElement instead of innerHTML +=
         const keySpan = document.createElement('span');
         keySpan.className = 'tree-key';
-        keySpan.textContent = key;
+        keySpan.textContent = Array.isArray(obj) ? `[${key}]` : key;
         node.appendChild(keySpan);
         
         node.appendChild(document.createTextNode(': '));
         
         const valueSpan = document.createElement('span');
         valueSpan.className = 'tree-value';
-        valueSpan.textContent = '{...}';
+        valueSpan.textContent = Array.isArray(value) ? `[${value.length} items]` : '{...}';
         node.appendChild(valueSpan);
         
         // Auto-expand if previously expanded
@@ -549,8 +635,13 @@
           valueNode.className = 'tree-null';
           valueNode.textContent = 'null';
         } else if (Array.isArray(value)) {
+          // Array is expandable, handled above
           valueNode.className = 'tree-value';
           valueNode.textContent = `[${value.length} items]`;
+        } else if (typeof value === 'object') {
+          // Object is expandable, handled above
+          valueNode.className = 'tree-value';
+          valueNode.textContent = '{...}';
         } else {
           valueNode.className = 'tree-value';
           valueNode.textContent = String(value);
@@ -571,6 +662,52 @@
     });
   }
   
+  // Parse path to handle both object keys and array indices
+  // Examples: "user.name" -> ["user", "name"]
+  //           "[0].locationName" -> [0, "locationName"]
+  //           "items[0].name" -> ["items", 0, "name"]
+  function parsePath(path) {
+    const parts = [];
+    let current = '';
+    let i = 0;
+    
+    while (i < path.length) {
+      if (path[i] === '[') {
+        // Array index
+        if (current) {
+          parts.push(current);
+          current = '';
+        }
+        i++; // Skip '['
+        let index = '';
+        while (i < path.length && path[i] !== ']') {
+          index += path[i];
+          i++;
+        }
+        if (index !== '') {
+          parts.push(parseInt(index, 10));
+        }
+        i++; // Skip ']'
+      } else if (path[i] === '.') {
+        // Object key separator
+        if (current) {
+          parts.push(current);
+          current = '';
+        }
+        i++;
+      } else {
+        current += path[i];
+        i++;
+      }
+    }
+    
+    if (current) {
+      parts.push(current);
+    }
+    
+    return parts;
+  }
+
   // Edit value function
   function editValue(element, storeName, path, currentValue) {
     // Mark as editing
@@ -594,16 +731,47 @@
     input.focus();
     input.select();
     
+    let isFinishing = false; // Prevent duplicate calls
+    
     const finishEdit = (save) => {
+      if (isFinishing) return; // Already finishing
+      isFinishing = true;
+      
       if (save && input.value !== displayValue.toString()) {
         // Update local state immediately
         try {
-          const keys = path.split('.');
+          const keys = parsePath(path);
           let target = currentState[storeName];
-          for (let i = 0; i < keys.length - 1; i++) {
+          
+          if (!target) {
+            console.error('[MobX DevTools] Store not found:', storeName);
+            isFinishing = false;
+            return;
+          }
+          
+          // If first key matches storeName, remove it (path includes storeName)
+          let startIndex = 0;
+          if (keys.length > 0 && keys[0] === storeName) {
+            startIndex = 1;
+          }
+          
+          // Navigate to parent object
+          for (let i = startIndex; i < keys.length - 1; i++) {
+            if (target === null || target === undefined) {
+              console.error('[MobX DevTools] Invalid path at:', keys.slice(0, i + 1));
+              isFinishing = false;
+              return;
+            }
             target = target[keys[i]];
           }
+          
           const lastKey = keys[keys.length - 1];
+          
+          if (target === null || target === undefined) {
+            console.error('[MobX DevTools] Invalid path:', path);
+            isFinishing = false;
+            return;
+          }
           
           // Convert type
           let newValue = input.value;
@@ -636,7 +804,10 @@
         }
       }
       
-      input.remove();
+      // Remove input safely
+      if (input.parentNode) {
+        input.remove();
+      }
       element.style.display = '';
       
       // Mark editing as complete
@@ -647,8 +818,10 @@
     input.addEventListener('blur', () => finishEdit(true));
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
+        e.preventDefault();
         finishEdit(true);
       } else if (e.key === 'Escape') {
+        e.preventDefault();
         finishEdit(false);
       }
     });
@@ -657,17 +830,29 @@
   // 액션 렌더링
   function renderActions() {
     const container = document.getElementById('actionsList');
-    if (actions.length === 0) {
-      container.innerHTML = '<div class="empty-state">액션이 없습니다</div>';
+    
+    // Filter actions
+    let filteredActions = actions;
+    if (actionFilter) {
+      filteredActions = actions.filter(action => {
+        const name = (action.name || '').toLowerCase();
+        const store = (action.object || '').toLowerCase();
+        return name.includes(actionFilter) || store.includes(actionFilter);
+      });
+    }
+    
+    if (filteredActions.length === 0) {
+      container.innerHTML = '<div class="empty-state">No actions found</div>';
       return;
     }
     
-    container.innerHTML = actions.map(action => {
+    container.innerHTML = filteredActions.map(action => {
       const time = action.timestamp ? new Date(action.timestamp).toLocaleTimeString() : '';
       const storeName = action.object ? `<span class="action-store">${action.object}</span>` : '';
+      const isSelected = selectedAction && String(selectedAction.id) === String(action.id);
       
       return `
-        <div class="action-item">
+        <div class="action-item ${isSelected ? 'selected' : ''}" data-action-id="${action.id}">
           <div class="action-header">
             <span class="action-name">${action.name || 'Unknown Action'}</span>
             ${storeName}
@@ -676,47 +861,269 @@
         </div>
       `;
     }).join('');
-  }
-
-  // Observable 업데이트 추가
-  function addObservableUpdate(update) {
-    observables.unshift({
-      ...update,
-      id: observables.length
+    
+    // Add click handlers
+    container.querySelectorAll('.action-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const actionId = item.dataset.actionId; // Keep as string since ID is now timestamp-counter
+        selectedAction = actions.find(a => String(a.id) === String(actionId));
+        renderActions(); // Re-render to update selection
+        renderActionDetail();
+      });
     });
-    
-    // 최대 100개만 유지
-    if (observables.length > 100) {
-      observables = observables.slice(0, 100);
-    }
-    
-    renderObservables();
   }
-
-  // Observables 렌더링
-  function renderObservables() {
-    const container = document.getElementById('observablesList');
-    if (observables.length === 0) {
-      container.innerHTML = '<div class="empty-state">Observable 변경사항이 없습니다</div>';
+  
+  // Render action detail
+  function renderActionDetail(activeTab) {
+    const container = document.getElementById('actionDetailContent');
+    
+    if (!selectedAction) {
+      container.innerHTML = '<div class="empty-state">Select an action to view details</div>';
       return;
     }
     
-    container.innerHTML = observables.map(obs => {
-      const time = new Date(obs.timestamp).toLocaleTimeString();
+    // Get active tab
+    if (!activeTab) {
+      const activeTabButton = document.querySelector('.action-detail-tab.active');
+      activeTab = activeTabButton ? activeTabButton.dataset.detailTab : 'state';
+    }
+    
+    if (activeTab === 'state') {
+      renderActionState(container);
+    } else if (activeTab === 'diff') {
+      renderActionDiff(container);
+    }
+  }
+  
+  // Render action state
+  function renderActionState(container) {
+    const state = actionStates.get(selectedAction.id);
+    if (!state || !state.after) {
+      console.log('[MobX DevTools] renderActionState - missing state:', {
+        hasState: !!state,
+        hasAfter: state ? !!state.after : false,
+        actionId: selectedAction.id
+      });
+      container.innerHTML = '<div class="empty-state">No state snapshot available</div>';
+      return;
+    }
+    
+    // Filter by selected action's store
+    const actionStore = selectedAction.object;
+    if (!actionStore) {
+      container.innerHTML = '<div class="empty-state">No store information available</div>';
+      return;
+    }
+    
+    console.log('[MobX DevTools] renderActionState:', {
+      actionStore,
+      afterStateKeys: Object.keys(state.after),
+      hasStoreInAfter: actionStore in state.after,
+      storeData: state.after[actionStore]
+    });
+    
+    // Only show the store that this action belongs to
+    const filteredState = {};
+    if (actionStore in state.after) {
+      filteredState[actionStore] = state.after[actionStore];
+    }
+    
+    if (Object.keys(filteredState).length === 0) {
+      container.innerHTML = '<div class="empty-state">Store not found in state snapshot</div>';
+      return;
+    }
+    
+    container.innerHTML = '';
+    const stateContainer = document.createElement('div');
+    stateContainer.className = 'tree-view';
+    renderTree(stateContainer, filteredState, 0, '');
+    container.appendChild(stateContainer);
+  }
+  
+  // Render action diff
+  function renderActionDiff(container) {
+    const state = actionStates.get(selectedAction.id);
+    if (!state) {
+      container.innerHTML = '<div class="empty-state">No state snapshot available</div>';
+      return;
+    }
+    
+    if (!state.before || !state.after) {
+      console.log('[MobX DevTools] Missing before/after state:', {
+        hasBefore: !!state.before,
+        hasAfter: !!state.after,
+        actionId: selectedAction.id
+      });
+      container.innerHTML = '<div class="empty-state">No diff available (before or after state missing)</div>';
+      return;
+    }
+    
+    // Filter by selected action's store
+    const actionStore = selectedAction.object;
+    if (!actionStore) {
+      container.innerHTML = '<div class="empty-state">No store information available</div>';
+      return;
+    }
+    
+    // Only compare the store that this action belongs to
+    const beforeStore = state.before[actionStore];
+    const afterStore = state.after[actionStore];
+    
+    console.log('[MobX DevTools] Calculating diff for store:', {
+      actionStore,
+      hasBeforeStore: beforeStore !== undefined,
+      hasAfterStore: afterStore !== undefined,
+      beforeStore,
+      afterStore
+    });
+    
+    // Calculate diff only for this store
+    // Pass undefined if store doesn't exist (not empty object)
+    const diff = calculateDiff(beforeStore, afterStore, actionStore);
+    
+    console.log('[MobX DevTools] Diff result:', diff);
+    
+    if (diff.length === 0) {
+      container.innerHTML = '<div class="empty-state">No changes detected</div>';
+      return;
+    }
+    
+    // Helper function to safely stringify values including undefined/false
+    const safeStringify = (value) => {
+      if (value === undefined) return 'undefined';
+      if (value === null) return 'null';
+      if (typeof value === 'boolean') return String(value);
+      if (typeof value === 'string') return JSON.stringify(value);
+      return JSON.stringify(value);
+    };
+    
+    container.innerHTML = diff.map(change => {
       return `
-        <div class="observable-item">
-          <div class="observable-header">
-            <span class="observable-name">${obs.name || 'Unknown'}</span>
-            <span class="action-time">${time}</span>
-          </div>
-          <div class="action-args">
-            Type: ${obs.type}<br>
-            ${obs.oldValue !== undefined ? `Old: ${JSON.stringify(obs.oldValue)}<br>` : ''}
-            ${obs.newValue !== undefined ? `New: ${JSON.stringify(obs.newValue)}` : ''}
-          </div>
+        <div style="padding: 8px; margin-bottom: 4px; border-left: 3px solid ${change.type === 'added' ? '#4caf50' : change.type === 'removed' ? '#f44336' : '#ff9800'}; background: #f9f9f9;">
+          <div style="font-weight: 600; color: #333; margin-bottom: 4px;">${change.path}</div>
+          ${change.type === 'removed' ? `<div style="color: #f44336;">- ${safeStringify(change.oldValue)}</div>` : ''}
+          ${change.type === 'added' ? `<div style="color: #4caf50;">+ ${safeStringify(change.newValue)}</div>` : ''}
+          ${change.type === 'modified' ? `
+            <div style="color: #f44336;">- ${safeStringify(change.oldValue)}</div>
+            <div style="color: #4caf50;">+ ${safeStringify(change.newValue)}</div>
+          ` : ''}
         </div>
       `;
     }).join('');
+  }
+  
+  // Calculate diff between two states
+  function calculateDiff(before, after, path = '') {
+    const changes = [];
+    
+    // Handle null/undefined cases - but keep them as undefined for comparison
+    // Don't convert to empty object, as that would hide the fact that they don't exist
+    const beforeIsObject = before !== null && before !== undefined && typeof before === 'object' && !Array.isArray(before);
+    const afterIsObject = after !== null && after !== undefined && typeof after === 'object' && !Array.isArray(after);
+    
+    // Handle cases where one or both are not objects
+    if (!beforeIsObject && !afterIsObject) {
+      // Both are primitives, null, or undefined - compare directly
+      const beforeStr = before === undefined ? 'undefined' : (before === null ? 'null' : JSON.stringify(before));
+      const afterStr = after === undefined ? 'undefined' : (after === null ? 'null' : JSON.stringify(after));
+      
+      if (beforeStr !== afterStr) {
+        changes.push({
+          path: path || 'root',
+          type: 'modified',
+          oldValue: before,
+          newValue: after
+        });
+      }
+      return changes;
+    }
+    
+    // One is object, one is not - treat as complete replacement
+    if (beforeIsObject && !afterIsObject) {
+      changes.push({
+        path: path || 'root',
+        type: 'modified',
+        oldValue: before,
+        newValue: after
+      });
+      return changes;
+    }
+    
+    if (!beforeIsObject && afterIsObject) {
+      changes.push({
+        path: path || 'root',
+        type: 'modified',
+        oldValue: before,
+        newValue: after
+      });
+      return changes;
+    }
+    
+    // Both are objects - compare their keys
+    if (beforeIsObject && afterIsObject) {
+      // Get all keys from both objects
+      const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    
+      allKeys.forEach(key => {
+        const currentPath = path ? `${path}.${key}` : key;
+        // Use 'in' operator to check existence, then get value (handles undefined/false correctly)
+        const beforeExists = key in before;
+        const afterExists = key in after;
+        const beforeValue = beforeExists ? before[key] : undefined;
+        const afterValue = afterExists ? after[key] : undefined;
+        
+        if (!beforeExists && afterExists) {
+          // Added (including false/undefined -> value)
+          changes.push({
+            path: currentPath,
+            type: 'added',
+            newValue: afterValue
+          });
+        } else if (beforeExists && !afterExists) {
+          // Removed
+          changes.push({
+            path: currentPath,
+            type: 'removed',
+            oldValue: beforeValue
+          });
+        } else if (beforeExists && afterExists) {
+          // Both exist - check if changed
+          // Handle objects and arrays
+          if (typeof beforeValue === 'object' && beforeValue !== null && typeof afterValue === 'object' && afterValue !== null) {
+            if (Array.isArray(beforeValue) || Array.isArray(afterValue)) {
+              // Handle arrays - compare length and elements
+              if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
+                changes.push({
+                  path: currentPath,
+                  type: 'modified',
+                  oldValue: beforeValue,
+                  newValue: afterValue
+                });
+              }
+            } else {
+              // Recursively check nested objects
+              changes.push(...calculateDiff(beforeValue, afterValue, currentPath));
+            }
+          } else {
+            // Primitive values - use deep equality check that handles undefined/false
+            const beforeStr = beforeValue === undefined ? 'undefined' : JSON.stringify(beforeValue);
+            const afterStr = afterValue === undefined ? 'undefined' : JSON.stringify(afterValue);
+            
+            if (beforeStr !== afterStr) {
+              // Modified (including false/undefined -> value, value -> false/undefined)
+              changes.push({
+                path: currentPath,
+                type: 'modified',
+                oldValue: beforeValue,
+                newValue: afterValue
+              });
+            }
+          }
+        }
+      });
+    }
+    
+    return changes;
   }
 
   // 상태 업데이트
