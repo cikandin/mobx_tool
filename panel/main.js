@@ -88,10 +88,10 @@
     // Initial status
     connection.updateStatus(false, 'Detecting MobX...');
 
-    // Periodic state request
-    setInterval(() => {
+    // Request state once after connection
+    setTimeout(() => {
       connection.requestState();
-    }, 2000);
+    }, 500);
   }
 })();
 

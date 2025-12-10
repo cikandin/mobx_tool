@@ -43,22 +43,25 @@
     }
   }
 
+  function safePostMessage(message) {
+    if (!isConnected || !port) return false;
+    try {
+      port.postMessage(message);
+      return true;
+    } catch (e) {
+      isConnected = false;
+      port = null;
+      return false;
+    }
+  }
+
   function setupMessageListener() {
     window.addEventListener('message', function(event) {
-      try {
-        if (!event.data || event.data.source !== 'mobx-devtools-inject') return;
-        if (!isConnected || !port) return;
-        
-        port.postMessage({
-          type: 'MOBX_MESSAGE',
-          payload: event.data
-        });
-      } catch (e) {
-        if (e.message && e.message.indexOf('Extension context invalidated') !== -1) {
-          isConnected = false;
-          port = null;
-        }
-      }
+      if (!event.data || event.data.source !== 'mobx-devtools-inject') return;
+      safePostMessage({
+        type: 'MOBX_MESSAGE',
+        payload: event.data
+      });
     });
   }
 

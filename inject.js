@@ -40,7 +40,8 @@
     filteredStores: null, // Filtered store names (null = send all)
     editingPath: null, // Currently editing path to skip update events
     editingTimeout: null, // Timeout to clear editing state
-    actionStack: [], // Stack of { id, info, changes, storeName }
+    actionStack: [], // Stack of actions (for nested actions)
+    reportEndDepth: 0, // Track spyReportStart/End depth
     
     // Official API: Inject MobX library
     injectMobx: function(mobx) {
@@ -55,6 +56,33 @@
       return this;
     },
     
+    // Send action with its changes
+    sendAction: function(action) {
+      // Only send if: action's store is filtered OR there are changes from filtered stores
+      var shouldSend = action.isFiltered || action.changes.length > 0;
+      
+      if (shouldSend) {
+        safeSend('ACTION', {
+          id: action.id,
+          name: action.name,
+          type: 'action',
+          object: action.storeName,
+          timestamp: action.timestamp,
+          changes: action.changes,
+          arguments: action.arguments || [],
+          stackTrace: action.stackTrace || ''
+        });
+      }
+    },
+    
+    // Get current action (top of stack)
+    getCurrentAction: function() {
+      if (this.actionStack.length > 0) {
+        return this.actionStack[this.actionStack.length - 1];
+      }
+      return null;
+    },
+    
     // Setup spy
     setupSpy: function(mobx) {
       if (!mobx || !mobx.spy) return;
@@ -63,106 +91,113 @@
       try {
         mobx.spy(function(event) {
           try {
-            // ACTION START - spyReportStart: true
+            // Track depth for all spyReportStart events
+            if (event.spyReportStart) {
+              self.reportEndDepth++;
+            }
+            
+            // Action START
             if (event.type === 'action' && event.spyReportStart) {
+              // Parse store name from action name: 'FleetStore@21.setLocationRoleOfRobot'
               var storeName = 'Unknown';
+              var actionName = event.name || '';
               
-              if (event.object && event.object.constructor) {
+              // Extract store name from action name
+              var atIndex = actionName.indexOf('@');
+              if (atIndex > 0) {
+                storeName = actionName.substring(0, atIndex);
+              } else if (event.object && event.object.constructor) {
                 storeName = event.object.constructor.name || 'Store';
               }
-              if (event.debugObjectName) {
-                var match = event.debugObjectName.match(/^([^@]+)/);
-                if (match) storeName = match[1];
-              }
               
-              // Always register store
+              // Always register store (for store list)
               if (event.object && storeName !== 'Unknown') {
                 self.stores.set(storeName, event.object);
               }
               
-              // Check if should record
-              var shouldRecord = self.filteredStores && 
-                                 self.filteredStores.length > 0 && 
-                                 self.filteredStores.includes(storeName);
+              // Check if this store is filtered
+              var isFiltered = self.filteredStores && 
+                               self.filteredStores.length > 0 && 
+                               self.filteredStores.includes(storeName);
               
-              if (shouldRecord) {
-                self.actionCount++;
-                var actionId = Date.now() + '-' + self.actionCount;
-                
-                // Push to stack
-                self.actionStack.push({
-                  id: actionId,
-                  name: event.name,
-                  storeName: storeName,
-                  timestamp: Date.now(),
-                  changes: []
+              // Capture stack trace
+              var stackTrace = '';
+              try {
+                throw new Error();
+              } catch (e) {
+                stackTrace = e.stack || '';
+                // Remove first few lines (Error, this function, mobx internals)
+                var lines = stackTrace.split('\n');
+                // Find first line that's not from mobx or inject.js
+                var filteredLines = lines.filter(function(line, idx) {
+                  if (idx < 3) return false; // Skip Error and internal lines
+                  if (line.indexOf('mobx') !== -1) return false;
+                  if (line.indexOf('inject.js') !== -1) return false;
+                  if (line.indexOf('chunk-DQOE5FNA') !== -1) return false; // MobX chunk
+                  return true;
                 });
-              } else {
-                // Push placeholder for non-recorded action (to maintain stack balance)
-                self.actionStack.push(null);
+                stackTrace = filteredLines.join('\n');
               }
+              
+              // Serialize arguments
+              var args = [];
+              try {
+                if (event.arguments && event.arguments.length > 0) {
+                  for (var i = 0; i < event.arguments.length; i++) {
+                    var arg = event.arguments[i];
+                    if (self.mobx && self.mobx.toJS) {
+                      try { arg = self.mobx.toJS(arg); } catch(e) {}
+                    }
+                    args.push(arg);
+                  }
+                  args = JSON.parse(JSON.stringify(args));
+                }
+              } catch (e) {
+                args = ['[serialization error]'];
+              }
+              
+              // Push new action to stack with its start depth
+              self.actionCount++;
+              self.actionStack.push({
+                id: Date.now() + '-' + self.actionCount,
+                name: actionName,
+                storeName: storeName,
+                timestamp: Date.now(),
+                changes: [],
+                isFiltered: isFiltered,
+                startDepth: self.reportEndDepth - 1,
+                arguments: args,
+                stackTrace: stackTrace
+              });
             }
             
-            // ACTION END - spyReportEnd: true
-            if (event.type === 'action' && event.spyReportEnd) {
+            // Report END - check if this closes an action
+            if (event.type === 'report-end') {
+              self.reportEndDepth--;
+              
+              // Check if top action's depth matches current depth
               if (self.actionStack.length > 0) {
-                var action = self.actionStack.pop();
-                
-                // Send if it was a recorded action
-                if (action !== null) {
-                  safeSend('ACTION', {
-                    id: action.id,
-                    name: action.name,
-                    type: 'action',
-                    object: action.storeName,
-                    timestamp: action.timestamp,
-                    changes: action.changes
-                  });
+                var topAction = self.actionStack[self.actionStack.length - 1];
+                if (topAction.startDepth === self.reportEndDepth) {
+                  // This report-end closes the top action
+                  self.actionStack.pop();
+                  
+                  var shouldSend = topAction.isFiltered || topAction.changes.length > 0;
+                  if (shouldSend) {
+                    self.sendAction(topAction);
+                  }
                 }
               }
             }
             
-            // FALLBACK: Action without spyReportStart/End (older MobX)
-            if (event.type === 'action' && !event.spyReportStart && !event.spyReportEnd) {
-              var storeName = 'Unknown';
-              
-              if (event.object && event.object.constructor) {
-                storeName = event.object.constructor.name || 'Store';
-              }
-              if (event.debugObjectName) {
-                var match = event.debugObjectName.match(/^([^@]+)/);
-                if (match) storeName = match[1];
-              }
-              
-              if (event.object && storeName !== 'Unknown') {
-                self.stores.set(storeName, event.object);
-              }
-              
-              var shouldRecord = self.filteredStores && 
-                                 self.filteredStores.length > 0 && 
-                                 self.filteredStores.includes(storeName);
-              
-              if (shouldRecord) {
-                self.actionCount++;
-                safeSend('ACTION', {
-                  id: Date.now() + '-' + self.actionCount,
-                  name: event.name,
-                  type: 'action',
-                  object: storeName,
-                  timestamp: Date.now(),
-                  changes: [] // No change tracking for fallback
-                });
-              }
-            }
-            
-            // Observable changes - add to current action
-            if (event.type === 'update' || event.type === 'add' || event.type === 'delete') {
+            // Observable changes (update/add/delete with spyReportStart)
+            if ((event.type === 'update' || event.type === 'add' || event.type === 'delete') && event.spyReportStart) {
               // Skip if editing
               if (self.editingPath && event.name && self.editingPath.indexOf(event.name) !== -1) {
                 return;
               }
               
-              // Get store name
+              // Get store name from debugObjectName (e.g., "LocationStore@1" -> "LocationStore")
               var changeStoreName = null;
               if (event.debugObjectName) {
                 var match = event.debugObjectName.match(/^([^@]+)/);
@@ -172,66 +207,60 @@
                 changeStoreName = event.object.constructor.name;
               }
               
-              // Register store
-              if (changeStoreName && changeStoreName !== 'Object' && changeStoreName !== 'Array') {
-                if (event.object) {
-                  self.stores.set(changeStoreName, event.object);
-                }
+              // Skip non-store objects
+              if (!changeStoreName || changeStoreName === 'Object' || changeStoreName === 'Array') {
+                return;
               }
               
-              // Find the innermost recorded action in stack
-              var currentAction = null;
-              for (var i = self.actionStack.length - 1; i >= 0; i--) {
-                if (self.actionStack[i] !== null) {
-                  currentAction = self.actionStack[i];
-                  break;
-                }
+              // Register store (always, for store list)
+              if (event.object) {
+                self.stores.set(changeStoreName, event.object);
               }
               
-              // Add change to current action if exists
+              // Skip if store is not in filter
+              var isFiltered = self.filteredStores && 
+                               self.filteredStores.length > 0 && 
+                               self.filteredStores.includes(changeStoreName);
+              
+              if (!isFiltered) {
+                return; // Don't process unfiltered stores
+              }
+              
+              // Find the parent action in stack (the one this change belongs to)
+              var currentAction = self.getCurrentAction();
+              
               if (currentAction) {
                 var change = {
                   type: event.type,
                   name: event.name || '',
                   store: changeStoreName,
-                  observableKind: event.observableKind || 'unknown',
-                  oldValue: undefined,
-                  newValue: undefined
+                  observableKind: event.observableKind || ''
                 };
                 
+                // MobX spy already provides oldValue/newValue
                 try {
-                  if (event.type === 'update') {
+                  if (self.mobx && self.mobx.toJS) {
+                    change.oldValue = self.mobx.toJS(event.oldValue);
+                    change.newValue = self.mobx.toJS(event.newValue);
+                  } else {
                     change.oldValue = event.oldValue;
                     change.newValue = event.newValue;
-                    if (self.mobx && self.mobx.toJS) {
-                      try { change.oldValue = self.mobx.toJS(event.oldValue); } catch(e) {}
-                      try { change.newValue = self.mobx.toJS(event.newValue); } catch(e) {}
-                    }
-                  } else if (event.type === 'add') {
-                    change.newValue = event.newValue;
-                    if (self.mobx && self.mobx.toJS) {
-                      try { change.newValue = self.mobx.toJS(event.newValue); } catch(e) {}
-                    }
-                  } else if (event.type === 'delete') {
-                    change.oldValue = event.oldValue;
-                    if (self.mobx && self.mobx.toJS) {
-                      try { change.oldValue = self.mobx.toJS(event.oldValue); } catch(e) {}
-                    }
                   }
                   change = JSON.parse(JSON.stringify(change));
                   currentAction.changes.push(change);
-                } catch (e) {}
+                } catch (e) {
+                  change.oldValue = String(event.oldValue);
+                  change.newValue = String(event.newValue);
+                  currentAction.changes.push(change);
+                }
               }
               
               // Update state panel
-              if (self.filteredStores && self.filteredStores.length > 0) {
-                if (changeStoreName && self.filteredStores.includes(changeStoreName)) {
-                  self.sendStateDebounced();
-                }
-              }
+              self.sendStateDebounced();
             }
           } catch (e) {}
         });
+        
       } catch (e) {}
     },
     
@@ -528,7 +557,6 @@
         } else if (event.data.type === 'SET_FILTER') {
           // Update filtered stores list
           hook.filteredStores = event.data.payload.stores;
-          // Don't send state immediately - let next update cycle handle it
         } else if (event.data.type === 'SET_VALUE') {
           // Set observable value
           hook.setValue(event.data.payload.storeName, event.data.payload.path, event.data.payload.value);
@@ -540,21 +568,5 @@
   // Initial detection attempts
   setTimeout(function() { detectExistingMobX(); }, 500);
   setTimeout(function() { detectExistingMobX(); }, 2000);
-
-  // Periodic state update (every 10 seconds)
-  setInterval(function() {
-    try {
-      if (hook.stores.size > 0) {
-        hook.sendState();
-      }
-    } catch (e) {}
-  }, 10000);
-  
-  // Periodic store detection (every 30 seconds) - scan for new stores
-  setInterval(function() {
-    try {
-      detectExistingMobX();
-    } catch (e) {}
-  }, 30000);
   
 })();

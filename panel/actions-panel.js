@@ -28,14 +28,13 @@
     
     container.innerHTML = filteredActions.map(action => {
       const time = action.timestamp ? new Date(action.timestamp).toLocaleTimeString() : '';
-      const storeName = action.object ? `<span class="action-store">${action.object}</span>` : '';
       const isSelected = state.selectedAction && String(state.selectedAction.id) === String(action.id);
       
       return `
         <div class="action-item ${isSelected ? 'selected' : ''}" data-action-id="${action.id}">
+          ${action.object ? `<div class="action-store-line">${action.object}</div>` : ''}
           <div class="action-header">
             <span class="action-name">${action.name || 'Unknown Action'}</span>
-            ${storeName}
             <span class="action-time">${time}</span>
           </div>
         </div>
@@ -53,7 +52,7 @@
   }
 
   /**
-   * Render action detail (State or Diff tab)
+   * Render action detail (State, Diff, or Trace tab)
    */
   function renderActionDetail(activeTab) {
     const container = document.getElementById('actionDetailContent');
@@ -72,6 +71,8 @@
       renderActionState(container);
     } else if (activeTab === 'diff') {
       renderActionDiff(container);
+    } else if (activeTab === 'trace') {
+      renderActionTrace(container);
     }
   }
 
@@ -175,6 +176,169 @@
         </div>
       `;
     }).join('');
+  }
+
+  /**
+   * Render action trace (arguments and stack trace)
+   */
+  function renderActionTrace(container) {
+    const action = state.selectedAction;
+    
+    let html = '<div class="trace-container">';
+    
+    // Action name
+    html += `<div class="trace-section">
+      <div class="trace-section-title">Action</div>
+      <div class="trace-action-name">${escapeHtml(action.name || 'Unknown')}</div>
+    </div>`;
+    
+    // Arguments
+    html += '<div class="trace-section">';
+    html += '<div class="trace-section-title">Arguments</div>';
+    
+    if (action.arguments && action.arguments.length > 0) {
+      html += '<div class="trace-arguments">';
+      action.arguments.forEach((arg, idx) => {
+        const argStr = typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg);
+        html += `<div class="trace-arg">
+          <span class="trace-arg-index">[${idx}]</span>
+          <pre class="trace-arg-value">${escapeHtml(argStr)}</pre>
+        </div>`;
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="trace-empty">No arguments</div>';
+    }
+    html += '</div>';
+    
+    // Stack trace - parsed and formatted
+    html += '<div class="trace-section">';
+    html += '<div class="trace-section-title">Call Stack</div>';
+    
+    if (action.stackTrace) {
+      const parsedStack = parseStackTrace(action.stackTrace);
+      if (parsedStack.length > 0) {
+        html += '<div class="trace-stack-list">';
+        parsedStack.forEach((frame, idx) => {
+          html += `
+            <div class="trace-stack-frame">
+              <div class="trace-stack-index">${idx}</div>
+              <div class="trace-stack-details">
+                <div class="trace-stack-function">${escapeHtml(frame.function || 'anonymous')}</div>
+                <div class="trace-stack-location">
+                  <span class="trace-stack-file">${escapeHtml(frame.file || 'unknown')}</span>
+                  ${frame.line ? `<span class="trace-stack-line">:${frame.line}</span>` : ''}
+                  ${frame.column ? `<span class="trace-stack-column">:${frame.column}</span>` : ''}
+                </div>
+              </div>
+            </div>
+          `;
+        });
+        html += '</div>';
+      } else {
+        html += `<pre class="trace-stack-raw">${escapeHtml(action.stackTrace)}</pre>`;
+      }
+    } else {
+      html += '<div class="trace-empty">No stack trace available</div>';
+    }
+    html += '</div>';
+    
+    html += '</div>';
+    container.innerHTML = html;
+  }
+  
+  /**
+   * Parse stack trace string into structured frames
+   */
+  function parseStackTrace(stackTrace) {
+    const frames = [];
+    const lines = stackTrace.split('\n').filter(line => line.trim());
+    
+    lines.forEach(line => {
+      line = line.trim();
+      
+      // Chrome format: "at functionName (file:line:column)" or "at file:line:column"
+      // Also handles: "at async functionName (file:line:column)"
+      let match = line.match(/^at\s+(?:async\s+)?(?:(.+?)\s+)?\(?(.+?):(\d+):(\d+)\)?$/);
+      
+      if (match) {
+        frames.push({
+          function: match[1] || 'anonymous',
+          file: cleanFilePath(match[2]),
+          line: match[3],
+          column: match[4]
+        });
+        return;
+      }
+      
+      // Simple format: "functionName@file:line:column" (Firefox)
+      match = line.match(/^(.+?)@(.+?):(\d+):(\d+)$/);
+      if (match) {
+        frames.push({
+          function: match[1] || 'anonymous',
+          file: cleanFilePath(match[2]),
+          line: match[3],
+          column: match[4]
+        });
+        return;
+      }
+      
+      // Fallback: just show the line as function name
+      if (line && !line.startsWith('Error')) {
+        frames.push({
+          function: line,
+          file: '',
+          line: '',
+          column: ''
+        });
+      }
+    });
+    
+    return frames;
+  }
+  
+  /**
+   * Clean file path for display
+   */
+  function cleanFilePath(path) {
+    if (!path) return '';
+    
+    // Remove webpack/vite internal paths
+    path = path.replace(/^webpack-internal:\/\/\//, '');
+    path = path.replace(/^webpack:\/\/\//, '');
+    
+    // Extract just the meaningful part of the URL
+    try {
+      const url = new URL(path);
+      let pathname = url.pathname;
+      
+      // Remove node_modules/.vite/deps prefix
+      pathname = pathname.replace(/\/node_modules\/\.vite\/deps\//, '');
+      
+      // Get just the filename and parent folder
+      const parts = pathname.split('/').filter(p => p);
+      if (parts.length > 2) {
+        return '.../' + parts.slice(-2).join('/');
+      }
+      return pathname;
+    } catch {
+      // Not a valid URL, return as-is but shortened
+      const parts = path.split('/').filter(p => p);
+      if (parts.length > 2) {
+        return '.../' + parts.slice(-2).join('/');
+      }
+      return path;
+    }
+  }
+  
+  /**
+   * Escape HTML characters
+   */
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
   }
 
   /**
@@ -293,6 +457,7 @@
     renderActionDetail,
     renderActionState,
     renderActionDiff,
+    renderActionTrace,
     handleAction,
     handleActionsBatch,
     updateActionAfterState,

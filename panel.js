@@ -1151,9 +1151,9 @@
   // 초기화
   updateStatus(false, 'MobX 감지 중...');
   
-  // 주기적으로 상태 확인
-  setInterval(() => {
+  // 초기 상태 요청 (1회만)
+  setTimeout(() => {
     requestState();
-  }, 2000);
+  }, 500);
 })();
 

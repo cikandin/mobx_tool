@@ -2,6 +2,18 @@
 const contentConnections = new Map(); // tabId -> content port
 const devtoolsConnections = new Map(); // tabId -> devtools port
 
+// Safe postMessage wrapper
+function safePostMessage(port, message, tabId, connectionMap) {
+  try {
+    port.postMessage(message);
+  } catch (e) {
+    // Port is closed, clean up
+    if (tabId && connectionMap) {
+      connectionMap.delete(tabId);
+    }
+  }
+}
+
 // Handle connection with content script
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'mobx-devtools-content') {
@@ -10,10 +22,9 @@ chrome.runtime.onConnect.addListener((port) => {
       contentConnections.set(tabId, port);
       
       port.onMessage.addListener((message) => {
-        // Send message only to DevTools of the same tab
         const devtoolsPort = devtoolsConnections.get(tabId);
         if (devtoolsPort) {
-          devtoolsPort.postMessage(message);
+          safePostMessage(devtoolsPort, message, tabId, devtoolsConnections);
         }
       });
       
@@ -22,7 +33,6 @@ chrome.runtime.onConnect.addListener((port) => {
       });
     }
   } else if (port.name === 'mobx-devtools-panel') {
-    // DevTools panel connection - tabId received from message
     let panelTabId = null;
     
     port.onMessage.addListener((message) => {
@@ -30,15 +40,14 @@ chrome.runtime.onConnect.addListener((port) => {
         panelTabId = message.tabId;
         devtoolsConnections.set(panelTabId, port);
         
-        // Request initial state if content script is already connected
         const contentPort = contentConnections.get(panelTabId);
         if (contentPort) {
-          contentPort.postMessage({ type: 'GET_STATE' });
+          safePostMessage(contentPort, { type: 'GET_STATE' }, panelTabId, contentConnections);
         }
       } else if (message.type === 'SEND_TO_PAGE' && message.tabId) {
         const contentPort = contentConnections.get(message.tabId);
         if (contentPort) {
-          contentPort.postMessage(message);
+          safePostMessage(contentPort, message, message.tabId, contentConnections);
         }
       }
     });
@@ -49,10 +58,5 @@ chrome.runtime.onConnect.addListener((port) => {
       }
     });
   }
-});
-
-// Message listener (fallback)
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  return true;
 });
 
