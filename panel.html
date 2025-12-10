@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,7 +12,7 @@
       <h1>MobX DevTools</h1>
       <div class="status" id="status">
         <span class="status-indicator" id="statusIndicator"></span>
-        <span id="statusText">MobX 감지 중...</span>
+        <span id="statusText">Detecting MobX...</span>
       </div>
     </div>
 
@@ -33,13 +33,14 @@
     </div>
 
     <div class="tab-content" id="actionsTab">
-      <div class="actions-container">
-        <div class="actions-panel-left">
+      <div class="actions-container" id="actionsContainer">
+        <div class="actions-panel-left" id="actionsPanelLeft">
           <div class="actions-toolbar">
             <input type="text" id="actionFilter" placeholder="filter..." class="action-filter-input">
             <button id="clearActions" class="btn">Clear</button>
           </div>
           <div id="actionsList" class="actions-list"></div>
+          <div class="resize-handle" id="resizeHandle"></div>
         </div>
         <div class="actions-panel-right">
           <div class="action-detail-tabs">
@@ -63,4 +64,3 @@
   <script src="panel/main.js"></script>
 </body>
 </html>
-

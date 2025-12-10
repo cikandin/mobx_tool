@@ -92,6 +92,82 @@
     setTimeout(() => {
       connection.requestState();
     }, 500);
+    
+    // Setup resize handle for actions panel
+    setupResizeHandle();
+  }
+  
+  /**
+   * Setup draggable resize handle for actions panel
+   */
+  function setupResizeHandle() {
+    const handle = document.getElementById('resizeHandle');
+    const leftPanel = document.getElementById('actionsPanelLeft');
+    const container = document.getElementById('actionsContainer');
+    
+    if (!handle || !leftPanel || !container) return;
+    
+    let isDragging = false;
+    let startX, startY, startWidth, startHeight;
+    
+    handle.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      handle.classList.add('dragging');
+      
+      const isVertical = window.innerWidth <= 600;
+      
+      if (isVertical) {
+        startY = e.clientY;
+        startHeight = leftPanel.offsetHeight;
+      } else {
+        startX = e.clientX;
+        startWidth = leftPanel.offsetWidth;
+      }
+      
+      e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      
+      const isVertical = window.innerWidth <= 600;
+      
+      if (isVertical) {
+        const deltaY = e.clientY - startY;
+        const newHeight = Math.max(150, Math.min(startHeight + deltaY, container.offsetHeight - 150));
+        leftPanel.style.height = newHeight + 'px';
+      } else {
+        const deltaX = e.clientX - startX;
+        const newWidth = Math.max(200, Math.min(startWidth + deltaX, container.offsetWidth - 200));
+        leftPanel.style.width = newWidth + 'px';
+      }
+    });
+    
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        handle.classList.remove('dragging');
+        
+        // Save size to localStorage
+        const isVertical = window.innerWidth <= 600;
+        if (isVertical) {
+          localStorage.setItem('mobx-devtools-panel-height', leftPanel.offsetHeight);
+        } else {
+          localStorage.setItem('mobx-devtools-panel-width', leftPanel.offsetWidth);
+        }
+      }
+    });
+    
+    // Restore saved size
+    const savedWidth = localStorage.getItem('mobx-devtools-panel-width');
+    const savedHeight = localStorage.getItem('mobx-devtools-panel-height');
+    
+    if (savedWidth && window.innerWidth > 600) {
+      leftPanel.style.width = savedWidth + 'px';
+    }
+    if (savedHeight && window.innerWidth <= 600) {
+      leftPanel.style.height = savedHeight + 'px';
+    }
   }
 })();
 

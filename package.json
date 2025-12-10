@@ -1,15 +1,17 @@
 {
-  "name": "mobxtool",
+  "name": "mobx-devtools",
   "version": "1.0.0",
-  "description": "Redux DevTools처럼 MobX 상태를 추적하고 디버깅할 수 있는 Chrome 확장 프로그램입니다.",
-  "main": "background.js",
+  "description": "Chrome DevTools extension for MobX state management",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "clean": "rm -rf dist"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
   "dependencies": {
-    "mobx": "^6.15.0"
+    "sourcemapped-stacktrace": "^1.1.11"
   }
 }

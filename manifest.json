@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "MobX DevTools",
   "version": "1.0.0",
-  "description": "Redux DevTools처럼 MobX 상태를 추적하고 디버깅할 수 있는 Chrome 확장 프로그램",
+  "description": "A Chrome extension to track and debug MobX state like Redux DevTools",
   "devtools_page": "devtools.html",
   "permissions": [
     "activeTab",
@@ -28,9 +28,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["inject.js", "panel/*"],
+      "resources": ["inject.js", "panel/*", "lib/*"],
       "matches": ["<all_urls>"]
     }
   ]
 }
-

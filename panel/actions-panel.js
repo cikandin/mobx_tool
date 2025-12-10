@@ -86,7 +86,6 @@
       return;
     }
     
-    // Show current state of the store
     const storeData = state.currentState[actionStore];
     if (!storeData) {
       container.innerHTML = '<div class="empty-state">Store not found: ' + actionStore + '</div>';
@@ -113,7 +112,7 @@
       return;
     }
     
-    // New format: use tracked changes directly
+    // Use tracked changes directly
     if (actionState.changes) {
       if (actionState.changes.length === 0) {
         container.innerHTML = '<div class="empty-state">No changes detected</div>';
@@ -211,33 +210,15 @@
     }
     html += '</div>';
     
-    // Stack trace - parsed and formatted
+    // Stack trace
     html += '<div class="trace-section">';
-    html += '<div class="trace-section-title">Call Stack</div>';
+    html += '<div class="trace-section-title">Call Stack <span class="trace-hint">(click to view source)</span></div>';
     
     if (action.stackTrace) {
-      const parsedStack = parseStackTrace(action.stackTrace);
-      if (parsedStack.length > 0) {
-        html += '<div class="trace-stack-list">';
-        parsedStack.forEach((frame, idx) => {
-          html += `
-            <div class="trace-stack-frame">
-              <div class="trace-stack-index">${idx}</div>
-              <div class="trace-stack-details">
-                <div class="trace-stack-function">${escapeHtml(frame.function || 'anonymous')}</div>
-                <div class="trace-stack-location">
-                  <span class="trace-stack-file">${escapeHtml(frame.file || 'unknown')}</span>
-                  ${frame.line ? `<span class="trace-stack-line">:${frame.line}</span>` : ''}
-                  ${frame.column ? `<span class="trace-stack-column">:${frame.column}</span>` : ''}
-                </div>
-              </div>
-            </div>
-          `;
-        });
-        html += '</div>';
-      } else {
-        html += `<pre class="trace-stack-raw">${escapeHtml(action.stackTrace)}</pre>`;
-      }
+      html += '<div id="stackTraceContent" class="trace-stack-list">';
+      html += renderClickableStackFrames(parseStackTrace(action.stackTrace), action.id);
+      html += '</div>';
+      html += '<div id="sourcePreview" class="source-preview-container"></div>';
     } else {
       html += '<div class="trace-empty">No stack trace available</div>';
     }
@@ -245,6 +226,208 @@
     
     html += '</div>';
     container.innerHTML = html;
+  }
+  
+  /**
+   * Render stack frames to HTML
+   */
+  function renderStackFrames(frames) {
+    if (frames.length === 0) {
+      return '<div class="trace-empty">Could not parse stack trace</div>';
+    }
+    
+    let html = '';
+    frames.forEach((frame, idx) => {
+      html += `
+        <div class="trace-stack-frame">
+          <div class="trace-stack-index">${idx}</div>
+          <div class="trace-stack-details">
+            <div class="trace-stack-function">${escapeHtml(frame.function || 'anonymous')}</div>
+            <div class="trace-stack-location">
+              <span class="trace-stack-file">${escapeHtml(frame.file || 'unknown')}</span>
+              ${frame.line ? `<span class="trace-stack-line">:${frame.line}</span>` : ''}
+              ${frame.column ? `<span class="trace-stack-column">:${frame.column}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    return html;
+  }
+  
+  /**
+   * Render clickable stack frames (source loaded on click)
+   */
+  function renderClickableStackFrames(frames, actionId) {
+    if (frames.length === 0) {
+      return '<div class="trace-empty">Could not parse stack trace</div>';
+    }
+    
+    let html = '';
+    frames.forEach((frame, idx) => {
+      const shortFile = cleanFilePath(frame.file || 'unknown');
+      const fileUrl = frame.file || '';
+      const line = frame.line || 0;
+      
+      html += `
+        <div class="trace-stack-frame clickable" 
+             data-file="${escapeHtml(fileUrl)}" 
+             data-line="${line}"
+             data-action-id="${actionId}"
+             data-frame-idx="${idx}">
+          <div class="trace-stack-index">${idx}</div>
+          <div class="trace-stack-details">
+            <div class="trace-stack-function">${escapeHtml(frame.function || 'anonymous')}</div>
+            <div class="trace-stack-location">
+              <span class="trace-stack-file">${escapeHtml(shortFile)}</span>
+              ${frame.line ? `<span class="trace-stack-line">:${frame.line}</span>` : ''}
+              ${frame.column ? `<span class="trace-stack-column">:${frame.column}</span>` : ''}
+            </div>
+          </div>
+          <div class="trace-stack-arrow">▶</div>
+        </div>
+      `;
+    });
+    return html;
+  }
+  
+  /**
+   * Render source code preview for a single frame
+   */
+  function renderSourcePreview(sourceLines, frame) {
+    if (!sourceLines || sourceLines.length === 0) {
+      return '<div class="trace-empty">Source code not available</div>';
+    }
+    
+    const shortFile = cleanFilePath(frame.file || 'unknown');
+    let html = `<div class="source-preview-header">${escapeHtml(shortFile)}:${frame.line}</div>`;
+    html += '<div class="trace-source-preview">';
+    sourceLines.forEach(line => {
+      const lineClass = line.isTarget ? 'trace-source-line target' : 'trace-source-line';
+      html += `
+        <div class="${lineClass}">
+          <span class="trace-source-linenum">${line.lineNumber}</span>
+          <span class="trace-source-code">${escapeHtml(line.code || '')}</span>
+        </div>`;
+    });
+    html += '</div>';
+    return html;
+  }
+  
+  /**
+   * Handle stack frame click - load source code
+   */
+  function handleStackFrameClick(element) {
+    const actionId = element.dataset.actionId;
+    const frameIdx = element.dataset.frameIdx;
+    
+    // Highlight selected frame
+    document.querySelectorAll('.trace-stack-frame.clickable').forEach(el => {
+      el.classList.remove('selected');
+    });
+    element.classList.add('selected');
+    
+    const previewContainer = document.getElementById('sourcePreview');
+    if (!previewContainer) return;
+    
+    const action = state.actions.find(a => a.id === actionId);
+    if (!action) return;
+    
+    // Check cache first
+    if (action.stackWithSource && action.stackWithSource[frameIdx]) {
+      const frameData = action.stackWithSource[frameIdx];
+      if (frameData && frameData.sourceLines) {
+        previewContainer.innerHTML = renderSourcePreview(frameData.sourceLines, frameData.frame);
+        return;
+      }
+    }
+    
+    previewContainer.innerHTML = '<div class="trace-loading">Loading source...</div>';
+    
+    // Request source for single frame
+    requestSingleFrameSource(actionId, action.stackTrace, frameIdx);
+  }
+  
+  /**
+   * Request source for a single stack frame
+   */
+  function requestSingleFrameSource(actionId, stackTrace, frameIdx) {
+    if (window.MobXDevToolsConnection && window.MobXDevToolsConnection.sendToPage) {
+      window.MobXDevToolsConnection.sendToPage({
+        type: 'GET_SINGLE_SOURCE',
+        payload: {
+          actionId: actionId,
+          stackTrace: stackTrace,
+          frameIdx: parseInt(frameIdx, 10)
+        }
+      });
+    }
+  }
+  
+  /**
+   * Handle single frame source response
+   */
+  function handleSingleFrameSource(data) {
+    const { actionId, frameIdx, sourceLines, frame } = data;
+    
+    const action = state.actions.find(a => a.id === actionId);
+    if (action) {
+      if (!action.stackWithSource) {
+        action.stackWithSource = [];
+      }
+      action.stackWithSource[frameIdx] = { frame, sourceLines };
+    }
+    
+    if (state.selectedAction && state.selectedAction.id === actionId) {
+      const previewContainer = document.getElementById('sourcePreview');
+      if (previewContainer) {
+        previewContainer.innerHTML = renderSourcePreview(sourceLines, frame);
+      }
+    }
+  }
+  
+  /**
+   * Try to map stack trace using source maps (async)
+   */
+  function tryMapStackTrace(stackTrace, actionId) {
+    if (typeof window.sourceMappedStackTrace === 'undefined') {
+      return;
+    }
+    
+    if (!state.mappedStacks) {
+      state.mappedStacks = new Map();
+    }
+    
+    if (state.mappedStacks.has(actionId)) {
+      const cached = state.mappedStacks.get(actionId);
+      updateStackTraceUI(cached);
+      return;
+    }
+    
+    try {
+      window.sourceMappedStackTrace.mapStackTrace(stackTrace, function(mappedStack) {
+        if (mappedStack && mappedStack.length > 0) {
+          const mappedFrames = parseStackTrace(mappedStack.join('\n'));
+          state.mappedStacks.set(actionId, mappedFrames);
+          
+          if (state.selectedAction && state.selectedAction.id === actionId) {
+            updateStackTraceUI(mappedFrames);
+          }
+        }
+      }, {
+        cacheGlobally: true
+      });
+    } catch (e) {}
+  }
+  
+  /**
+   * Update stack trace UI with mapped frames
+   */
+  function updateStackTraceUI(frames) {
+    const container = document.getElementById('stackTraceContent');
+    if (container) {
+      container.innerHTML = renderStackFrames(frames);
+    }
   }
   
   /**
@@ -257,8 +440,7 @@
     lines.forEach(line => {
       line = line.trim();
       
-      // Chrome format: "at functionName (file:line:column)" or "at file:line:column"
-      // Also handles: "at async functionName (file:line:column)"
+      // Chrome format
       let match = line.match(/^at\s+(?:async\s+)?(?:(.+?)\s+)?\(?(.+?):(\d+):(\d+)\)?$/);
       
       if (match) {
@@ -271,7 +453,7 @@
         return;
       }
       
-      // Simple format: "functionName@file:line:column" (Firefox)
+      // Firefox format
       match = line.match(/^(.+?)@(.+?):(\d+):(\d+)$/);
       if (match) {
         frames.push({
@@ -283,7 +465,6 @@
         return;
       }
       
-      // Fallback: just show the line as function name
       if (line && !line.startsWith('Error')) {
         frames.push({
           function: line,
@@ -303,26 +484,21 @@
   function cleanFilePath(path) {
     if (!path) return '';
     
-    // Remove webpack/vite internal paths
     path = path.replace(/^webpack-internal:\/\/\//, '');
     path = path.replace(/^webpack:\/\/\//, '');
     
-    // Extract just the meaningful part of the URL
     try {
       const url = new URL(path);
       let pathname = url.pathname;
       
-      // Remove node_modules/.vite/deps prefix
       pathname = pathname.replace(/\/node_modules\/\.vite\/deps\//, '');
       
-      // Get just the filename and parent folder
       const parts = pathname.split('/').filter(p => p);
       if (parts.length > 2) {
         return '.../' + parts.slice(-2).join('/');
       }
       return pathname;
     } catch {
-      // Not a valid URL, return as-is but shortened
       const parts = path.split('/').filter(p => p);
       if (parts.length > 2) {
         return '.../' + parts.slice(-2).join('/');
@@ -347,13 +523,11 @@
   function handleAction(actionData) {
     state.actions.push(actionData);
     
-    // Store changes directly from inject.js
     if (actionData.changes && actionData.changes.length > 0) {
       state.actionStates.set(actionData.id, {
         changes: actionData.changes
       });
     } else if (actionData.beforeState && actionData.afterState) {
-      // Legacy: use beforeState/afterState
       const beforeObj = {};
       const afterObj = {};
       beforeObj[actionData.object] = actionData.beforeState;
@@ -364,7 +538,6 @@
         after: afterObj
       });
     } else {
-      // No state info
       state.actionStates.set(actionData.id, {
         changes: []
       });
@@ -411,7 +584,6 @@
 
   /**
    * Update after state for pending actions when STATE_UPDATE arrives
-   * (Fallback for actions without embedded beforeState/afterState)
    */
   function updateActionAfterState(newState) {
     const state = window.MobXDevToolsState;
@@ -421,9 +593,7 @@
       const action = state.actions[i];
       const actionState = state.actionStates.get(action.id);
       
-      // Only update if after is null (not already set by inject.js)
       if (actionState && actionState.after === null) {
-        // Build after state with just the relevant store
         const afterObj = {};
         if (action.object && newState[action.object]) {
           afterObj[action.object] = JSON.parse(JSON.stringify(newState[action.object]));
@@ -441,15 +611,81 @@
   }
 
   /**
+   * Request source code for stack trace (lazy loading)
+   */
+  function requestStackSource(actionId, stackTrace) {
+    if (!state.pendingSourceRequests) {
+      state.pendingSourceRequests = new Set();
+    }
+    
+    if (state.pendingSourceRequests.has(actionId)) {
+      return;
+    }
+    
+    state.pendingSourceRequests.add(actionId);
+    
+    if (window.MobXDevToolsConnection && window.MobXDevToolsConnection.sendToPage) {
+      window.MobXDevToolsConnection.sendToPage({
+        type: 'GET_STACK_SOURCE',
+        payload: {
+          actionId: actionId,
+          stackTrace: stackTrace
+        }
+      });
+    }
+  }
+  
+  /**
+   * Handle source code response
+   */
+  function handleStackSource(data) {
+    const actionId = data.actionId;
+    const stackWithSource = data.stackWithSource;
+    
+    if (state.pendingSourceRequests) {
+      state.pendingSourceRequests.delete(actionId);
+    }
+    
+    const action = state.actions.find(a => a.id === actionId);
+    if (action) {
+      action.stackWithSource = stackWithSource;
+      
+      if (state.selectedAction && state.selectedAction.id === actionId) {
+        const container = document.getElementById('stackTraceContent');
+        const loading = document.getElementById('sourceLoading');
+        
+        if (container && stackWithSource && stackWithSource.length > 0) {
+          container.innerHTML = renderStackFramesWithSource(stackWithSource);
+        }
+        
+        if (loading) {
+          loading.remove();
+        }
+      }
+    }
+  }
+
+  /**
    * Clear all actions
    */
   function clearActions() {
     state.actions = [];
     state.actionStates.clear();
     state.selectedAction = null;
+    if (state.pendingSourceRequests) {
+      state.pendingSourceRequests.clear();
+    }
     renderActions();
     renderActionDetail();
   }
+
+  // Setup click handler for stack frames
+  document.addEventListener('click', function(e) {
+    const frame = e.target.closest('.trace-stack-frame.clickable');
+    if (frame) {
+      handleStackFrameClick(frame);
+    }
+  });
 
   // Export functions
   window.MobXDevToolsActionsPanel = {
@@ -461,7 +697,9 @@
     handleAction,
     handleActionsBatch,
     updateActionAfterState,
-    clearActions
+    clearActions,
+    handleStackSource,
+    requestStackSource,
+    handleSingleFrameSource
   };
 })();
-

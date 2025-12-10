@@ -1,20 +1,17 @@
 // Background Service Worker
-const contentConnections = new Map(); // tabId -> content port
-const devtoolsConnections = new Map(); // tabId -> devtools port
+const contentConnections = new Map();
+const devtoolsConnections = new Map();
 
-// Safe postMessage wrapper
 function safePostMessage(port, message, tabId, connectionMap) {
   try {
     port.postMessage(message);
   } catch (e) {
-    // Port is closed, clean up
     if (tabId && connectionMap) {
       connectionMap.delete(tabId);
     }
   }
 }
 
-// Handle connection with content script
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'mobx-devtools-content') {
     const tabId = port.sender?.tab?.id;
@@ -44,7 +41,7 @@ chrome.runtime.onConnect.addListener((port) => {
         if (contentPort) {
           safePostMessage(contentPort, { type: 'GET_STATE' }, panelTabId, contentConnections);
         }
-      } else if (message.type === 'SEND_TO_PAGE' && message.tabId) {
+      } else if (message.type === 'SEND_TO_PAGE') {
         const contentPort = contentConnections.get(message.tabId);
         if (contentPort) {
           safePostMessage(contentPort, message, message.tabId, contentConnections);
@@ -59,4 +56,3 @@ chrome.runtime.onConnect.addListener((port) => {
     });
   }
 });
-

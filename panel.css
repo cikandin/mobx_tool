@@ -267,21 +267,77 @@ body {
   display: flex;
   height: 100%;
   overflow: hidden;
+  flex-direction: row;
 }
 
 .actions-panel-left {
   width: 300px;
+  min-width: 200px;
+  max-width: 50%;
   border-right: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
   background: var(--bg-tertiary);
+  position: relative;
+}
+
+/* Resize handle */
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 10;
+}
+
+.resize-handle:hover,
+.resize-handle.dragging {
+  background: var(--accent-primary);
 }
 
 .actions-panel-right {
   flex: 1;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* Responsive: stack vertically when narrow */
+@media (max-width: 600px) {
+  .actions-container {
+    flex-direction: column;
+  }
+  
+  .actions-panel-left {
+    width: 100% !important;
+    max-width: 100%;
+    height: 40%;
+    min-height: 150px;
+    max-height: 60%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+  }
+  
+  .resize-handle {
+    right: 0;
+    left: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 4px;
+    cursor: row-resize;
+  }
+  
+  .actions-panel-right {
+    flex: 1;
+    min-height: 150px;
+  }
 }
 
 .actions-toolbar {
@@ -732,4 +788,151 @@ body {
   ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
   }
+}
+
+/* Source Code Preview */
+.trace-stack-frame-with-source {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.trace-stack-header {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.trace-stack-frame-with-source .trace-stack-index {
+  width: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-right: 8px;
+}
+
+.trace-stack-frame-with-source .trace-stack-details {
+  flex: 1;
+}
+
+.trace-stack-frame-with-source .trace-stack-function {
+  font-weight: 600;
+  color: var(--syntax-function);
+  font-size: 12px;
+}
+
+.trace-stack-frame-with-source .trace-stack-location {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.trace-source-preview {
+  font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  background: var(--bg-code);
+}
+
+.trace-source-line {
+  display: flex;
+  white-space: pre;
+  padding: 0 8px;
+}
+
+.trace-source-line.target {
+  background: var(--bg-selected);
+  font-weight: 500;
+}
+
+.trace-source-linenum {
+  width: 40px;
+  text-align: right;
+  color: var(--text-muted);
+  padding-right: 12px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.trace-source-line.target .trace-source-linenum {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.trace-source-code {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.trace-source-line.target .trace-source-code {
+  color: var(--text-primary);
+}
+
+/* Loading indicator */
+.trace-loading {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-light);
+}
+
+/* Clickable stack frames */
+.trace-stack-frame.clickable {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.15s;
+}
+
+.trace-stack-frame.clickable:hover {
+  background: var(--bg-hover);
+}
+
+.trace-stack-frame.clickable.selected {
+  background: var(--bg-selected);
+}
+
+.trace-stack-frame.clickable .trace-stack-arrow {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.trace-stack-frame.clickable.selected .trace-stack-arrow {
+  transform: rotate(90deg);
+  color: var(--accent-primary);
+}
+
+/* Source preview container */
+.source-preview-container {
+  margin-top: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.source-preview-header {
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-light);
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+/* Hint text */
+.trace-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: normal;
+  margin-left: 8px;
 }

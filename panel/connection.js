@@ -13,7 +13,6 @@
   function connectToBackground() {
     try {
       if (!chrome.runtime || !chrome.runtime.id) {
-        console.error('[MobX DevTools Panel] Extension context is invalid');
         updateStatus(false, 'Extension has been updated. Please refresh the page.');
         return;
       }
@@ -26,7 +25,6 @@
           tabId: window.currentTabId
         });
       } catch (postError) {
-        console.error('[MobX DevTools Panel] Error sending INIT_PANEL:', postError);
         return;
       }
 
@@ -61,30 +59,32 @@
   }
 
   /**
-   * Send message to page via background script
+   * Send message to page via chrome.tabs.sendMessage
    */
   function sendToPage(message) {
     try {
-      if (!chrome.runtime || !chrome.runtime.id) return;
-      if (!port) return;
+      if (!chrome.runtime || !chrome.runtime.id) {
+        return;
+      }
       
       if (window.currentTabId) {
-        port.postMessage({
+        chrome.tabs.sendMessage(window.currentTabId, {
           type: 'SEND_TO_PAGE',
-          tabId: window.currentTabId,
           payload: message
+        }).catch((err) => {
+          // Fallback to port if available
+          if (port) {
+            try {
+              port.postMessage({
+                type: 'SEND_TO_PAGE',
+                tabId: window.currentTabId,
+                payload: message
+              });
+            } catch (e) {}
+          }
         });
-      } else {
-        chrome.runtime.sendMessage({
-          type: 'SEND_TO_PAGE',
-          payload: message
-        }).catch(() => {});
       }
-    } catch (error) {
-      if (error.message && error.message.includes('Extension context invalidated')) {
-        updateStatus(false, 'Extension has been updated. Please refresh the page.');
-      }
-    }
+    } catch (error) {}
   }
 
   /**
@@ -188,9 +188,14 @@
         state.actions = data.payload.actions;
         actionsPanel.renderActions();
         break;
-        
-      default:
-        console.log('[MobX DevTools Panel] Unknown message type:', data.type);
+      
+      case 'STACK_SOURCE':
+        actionsPanel.handleStackSource(data.payload);
+        break;
+      
+      case 'SINGLE_FRAME_SOURCE':
+        actionsPanel.handleSingleFrameSource(data.payload);
+        break;
     }
   }
 
@@ -237,4 +242,3 @@
     setupChromeListener
   };
 })();
-
