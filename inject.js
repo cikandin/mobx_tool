@@ -675,8 +675,14 @@
           if (frameIdx >= 0 && frameIdx < frames.length) {
             var frame = frames[frameIdx];
             
-            if (frame.file && (frame.file.indexOf('http') === 0 || frame.file.indexOf('/src/') !== -1 || 
-                frame.file.indexOf('.ts') !== -1 || frame.file.indexOf('.js') !== -1)) {
+            // Only fetch if we have a proper path (http URL or path with /)
+            var hasProperPath = frame.file && (
+              frame.file.indexOf('http://') === 0 || 
+              frame.file.indexOf('https://') === 0 || 
+              frame.file.indexOf('/') !== -1
+            );
+            
+            if (hasProperPath) {
               hook.fetchSourceCode(frame.file, frame.line, function(sourceLines) {
                 safeSend('SINGLE_FRAME_SOURCE', {
                   actionId: payload.actionId,
