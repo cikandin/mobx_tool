@@ -7,14 +7,29 @@
   let startX = 0;
   let startW = 0;
   
+  // Virtual scroll
+  const ITEM_HEIGHT = 42;
+  const BUFFER = 5;
+  let scrollTop = 0;
+  let containerHeight = 300;
+  let listEl;
+  
   $: filtered = $actionFilter
     ? $actions.filter(a => 
         (a.name || '').toLowerCase().includes($actionFilter.toLowerCase()) ||
         (a.object || '').toLowerCase().includes($actionFilter.toLowerCase()))
     : $actions;
   
+  $: totalHeight = filtered.length * ITEM_HEIGHT;
+  $: startIdx = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER);
+  $: endIdx = Math.min(filtered.length, Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + BUFFER);
+  $: visible = filtered.slice(startIdx, endIdx);
+  $: offsetY = startIdx * ITEM_HEIGHT;
+  
   function select(action) { $selectedAction = action; }
   function formatTime(ts) { return ts ? new Date(ts).toLocaleTimeString() : ''; }
+  
+  function onScroll(e) { scrollTop = e.target.scrollTop; }
   
   function startDrag(e) { dragging = true; startX = e.clientX; startW = leftWidth; }
   function onMove(e) { if (dragging) leftWidth = Math.max(180, Math.min(startW + e.clientX - startX, window.innerWidth - 200)); }
@@ -31,23 +46,25 @@
       <button class="px-2 py-0.5 text-xs text-error border border-error/50 rounded hover:bg-error/10" on:click={clearActions}>Clear</button>
     </div>
     
-    <div class="flex-1 overflow-auto">
+    <div class="flex-1 overflow-auto" bind:this={listEl} bind:clientHeight={containerHeight} on:scroll={onScroll}>
       {#if filtered.length === 0}
         <div class="text-center py-4 opacity-50 text-xs">No actions</div>
       {:else}
-        {#each filtered as action (action.id)}
-          <div class="px-2 py-1 cursor-pointer border-b border-base-300 hover:bg-base-300
-                      {$selectedAction?.id === action.id ? 'bg-primary/20 border-l-2 border-l-primary' : ''}"
-            on:click={() => select(action)} on:keydown={e => e.key === 'Enter' && select(action)}>
-            {#if action.object}
-              <div class="text-[10px] opacity-50 truncate">{action.object}</div>
-            {/if}
-            <div class="flex justify-between items-center">
-              <span class="text-xs truncate">{action.name || 'Unknown'}</span>
-              <span class="text-[10px] opacity-40 ml-1 shrink-0">{formatTime(action.timestamp)}</span>
-            </div>
+        <div style="height: {totalHeight}px; position: relative;">
+          <div style="transform: translateY({offsetY}px);">
+            {#each visible as action (action.id)}
+              <div class="px-2 py-1.5 cursor-pointer border-b border-base-300 hover:bg-base-300 h-[42px] box-border
+                          {$selectedAction?.id === action.id ? 'bg-primary/20 border-l-2 border-l-primary' : ''}"
+                on:click={() => select(action)} on:keydown={e => e.key === 'Enter' && select(action)}>
+                <div class="text-[10px] opacity-50 truncate h-3">{action.object || ''}</div>
+                <div class="flex justify-between items-center">
+                  <span class="text-xs truncate">{action.name || 'Unknown'}</span>
+                  <span class="text-[10px] opacity-40 ml-1 shrink-0">{formatTime(action.timestamp)}</span>
+                </div>
+              </div>
+            {/each}
           </div>
-        {/each}
+        </div>
       {/if}
     </div>
   </div>
