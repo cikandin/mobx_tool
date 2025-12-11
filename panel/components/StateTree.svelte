@@ -23,7 +23,7 @@
     editValue = typeof value === 'string' ? value : String(value);
   }
   
-  function finishEdit(key, original) {
+  function finishEdit(key) {
     if (editingKey === key) {
       const p = path ? `${path}.${key}` : key;
       const store = depth === 0 ? key : storeName;
@@ -49,30 +49,30 @@
   $: entries = data ? Object.entries(data) : [];
 </script>
 
-<div class="font-mono text-sm" style="margin-left: {depth * 16}px">
+<div class="font-mono text-xs leading-tight" style="margin-left: {depth * 12}px">
   {#each entries as [key, value]}
     {@const isObj = typeof value === 'object' && value !== null}
     {@const currentPath = path ? `${path}.${key}` : key}
     {@const currentStore = depth === 0 ? key : storeName}
     {@const expanded = $expandedPaths.has(currentPath)}
     
-    <div class="py-0.5 hover:bg-base-300 rounded px-1 -mx-1">
+    <div class="py-px hover:bg-base-300 rounded px-1 -mx-1">
       {#if isObj}
-        <span class="cursor-pointer w-4 inline-block text-center opacity-50 hover:opacity-100"
+        <span class="cursor-pointer w-3 inline-block text-center opacity-50 hover:opacity-100"
           on:click={() => toggle(key)} on:keydown={e => e.key === 'Enter' && toggle(key)}>
           {expanded ? '▼' : '▶'}
         </span>
-        <span class="text-primary font-medium">{key}</span>
-        <span class="opacity-50">: {Array.isArray(value) ? `[${value.length}]` : '{...}'}</span>
+        <span class="text-primary">{key}</span>
+        <span class="opacity-50">: {Array.isArray(value) ? `[${value.length}]` : '{…}'}</span>
       {:else}
-        <span class="w-4 inline-block"></span>
-        <span class="text-primary font-medium">{key}</span>
+        <span class="w-3 inline-block"></span>
+        <span class="text-primary">{key}</span>
         <span class="opacity-50">: </span>
         {#if editingKey === key}
-          <input type="text" class="input input-xs input-bordered w-32"
+          <input type="text" class="px-1 py-0 text-xs border border-base-300 rounded w-24 bg-base-100"
             bind:value={editValue}
-            on:blur={() => finishEdit(key, value)}
-            on:keydown={e => e.key === 'Enter' && finishEdit(key, value)} />
+            on:blur={() => finishEdit(key)}
+            on:keydown={e => e.key === 'Enter' && finishEdit(key)} />
         {:else}
           <span class="{getClass(value)} cursor-pointer hover:underline"
             on:dblclick={() => startEdit(key, value)} title="Double-click to edit">
@@ -87,4 +87,3 @@
     {/if}
   {/each}
 </div>
-
