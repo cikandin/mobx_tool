@@ -97,6 +97,11 @@
           return response.text();
         })
         .then(function(source) {
+          // Check if response is HTML (404 fallback to index.html)
+          if (source.trim().startsWith('<!') || source.trim().startsWith('<html') || source.trim().startsWith('<script')) {
+            callback(null);
+            return;
+          }
           self.sourceCache[cacheKey] = source;
           callback(self.extractLines(source, lineNumber));
         })
