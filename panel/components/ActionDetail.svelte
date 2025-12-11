@@ -112,12 +112,12 @@
           {/each}
         </div>
         
-        {#if selectedFrame !== null}
+        {#if selectedFrame !== null && frameSource}
           <div class="mt-2 bg-base-300 rounded overflow-hidden">
             <div class="px-2 py-1 bg-base-100 text-[10px] font-mono opacity-70 border-b border-base-200">
               {frames[selectedFrame]?.file}:{frames[selectedFrame]?.line}
             </div>
-            {#if frameSource?.sourceLines}
+            {#if frameSource.sourceLines}
               <div class="font-mono text-xs">
                 {#each frameSource.sourceLines as line}
                   <div class="flex {line.isTarget ? 'bg-warning/20' : ''}">
@@ -126,12 +126,12 @@
                   </div>
                 {/each}
               </div>
-            {:else if frameSource}
-              <div class="p-2 text-center opacity-50 text-xs">Source not available</div>
             {:else}
-              <div class="p-2 text-center opacity-50 text-xs">Loading...</div>
+              <div class="p-2 text-center opacity-50 text-xs">Source not available</div>
             {/if}
           </div>
+        {:else if selectedFrame !== null}
+          <div class="mt-2 p-2 text-center opacity-50 text-xs">Loading...</div>
         {/if}
       {:else}
         <div class="opacity-50 text-xs">No stack trace</div>
