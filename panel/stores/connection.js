@@ -109,7 +109,16 @@ function handleMessage(data) {
           action.stackWithSource = action.stackWithSource || [];
           action.stackWithSource[frameIdx] = { frame, sourceLines };
         }
-        return list;
+        return [...list]; // Create new array to trigger reactivity
+      });
+      // Also update selectedAction if it's the same action
+      selectedAction.update(sel => {
+        if (sel && sel.id === actionId) {
+          sel.stackWithSource = sel.stackWithSource || [];
+          sel.stackWithSource[frameIdx] = { frame, sourceLines };
+          return { ...sel }; // Create new object to trigger reactivity
+        }
+        return sel;
       });
       break;
   }
