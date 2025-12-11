@@ -58,7 +58,12 @@
                 on:click={() => select(action)} on:keydown={e => e.key === 'Enter' && select(action)}>
                 <div class="text-[10px] opacity-50 truncate h-3">{action.object || ''}</div>
                 <div class="flex justify-between items-center">
-                  <span class="text-xs truncate">{action.name || 'Unknown'}</span>
+                  <span class="text-xs truncate">
+                    {action.name || 'Unknown'}
+                    {#if action.isGrouped}
+                      <span class="text-warning opacity-70">(×{action.totalOccurrences})</span>
+                    {/if}
+                  </span>
                   <span class="text-[10px] opacity-40 ml-1 shrink-0">{formatTime(action.timestamp)}</span>
                 </div>
               </div>

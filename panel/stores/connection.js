@@ -14,6 +14,11 @@ export const actions = writable([]);
 export const selectedAction = writable(null);
 export const actionStates = writable(new Map());
 export const actionFilter = writable('');
+export const actionNameCounts = writable(new Map()); // name -> total count
+
+const MAX_ACTIONS = 2000;
+const GROUP_THRESHOLD = 200;
+const GROUP_KEEP = 5;
 
 // UI state
 export const expandedPaths = writable(new Set());
@@ -88,9 +93,38 @@ function handleMessage(data) {
       break;
     
     case 'ACTION':
+      const actionName = data.payload.name || 'Unknown';
+      
+      // Update total count for this action name
+      let totalCount = 0;
+      actionNameCounts.update(counts => {
+        totalCount = (counts.get(actionName) || 0) + 1;
+        counts.set(actionName, totalCount);
+        return new Map(counts);
+      });
+      
       actions.update(list => {
-        const newList = [...list, data.payload];
-        return newList.length > 500 ? newList.slice(-500) : newList;
+        let newList = [...list, { 
+          ...data.payload, 
+          totalOccurrences: totalCount,
+          isGrouped: totalCount >= GROUP_THRESHOLD
+        }];
+        
+        // If this action name has 200+ occurrences, keep only latest 5
+        if (totalCount >= GROUP_THRESHOLD) {
+          const sameNameActions = newList.filter(a => a.name === actionName);
+          if (sameNameActions.length > GROUP_KEEP) {
+            const toKeepIds = new Set(sameNameActions.slice(-GROUP_KEEP).map(a => a.id));
+            newList = newList.filter(a => a.name !== actionName || toKeepIds.has(a.id));
+          }
+        }
+        
+        // Global limit
+        if (newList.length > MAX_ACTIONS) {
+          newList = newList.slice(-MAX_ACTIONS);
+        }
+        
+        return newList;
       });
       
       if (data.payload.changes?.length > 0) {
@@ -152,6 +186,7 @@ export function saveSelectedStores(stores) {
 export function clearActions() {
   actions.set([]);
   actionStates.set(new Map());
+  actionNameCounts.set(new Map());
   selectedAction.set(null);
 }
 
