@@ -231,6 +231,25 @@
       return null;
     },
     
+    // Safe toJS wrapper to avoid reaction cycles
+    safeToJS: function(value) {
+      var self = this;
+      if (!self.mobx) return value;
+      
+      try {
+        if (self.mobx.untracked) {
+          return self.mobx.untracked(function() {
+            return self.mobx.toJS ? self.mobx.toJS(value) : value;
+          });
+        } else if (self.mobx.toJS) {
+          return self.mobx.toJS(value);
+        }
+        return value;
+      } catch (e) {
+        return value;
+      }
+    },
+    
     // Setup spy
     setupSpy: function(mobx) {
       if (!mobx || !mobx.spy) return;
@@ -239,162 +258,170 @@
       try {
         mobx.spy(function(event) {
           try {
-            if (event.spyReportStart) {
-              self.reportEndDepth++;
-            }
-            
-            // Action START
-            if (event.type === 'action' && event.spyReportStart) {
-              var storeName = 'Unknown';
-              var actionName = event.name || '';
-              
-              var atIndex = actionName.indexOf('@');
-              if (atIndex > 0) {
-                storeName = actionName.substring(0, atIndex);
-              } else if (event.object && event.object.constructor) {
-                storeName = event.object.constructor.name || 'Store';
-              }
-              
-              if (event.object && storeName !== 'Unknown') {
-                self.stores.set(storeName, event.object);
-              }
-              
-              var isFiltered = self.filteredStores && 
-                               self.filteredStores.length > 0 && 
-                               self.filteredStores.includes(storeName);
-              
-              // Capture stack trace
-              var stackTrace = '';
-              try {
-                throw new Error();
-              } catch (e) {
-                stackTrace = e.stack || '';
-                var lines = stackTrace.split('\n');
-                var filteredLines = lines.filter(function(line, idx) {
-                  if (idx === 0 && line.indexOf('Error') !== -1) return false;
-                  if (line.indexOf('/mobx.') !== -1) return false;
-                  if (line.indexOf('/mobx/') !== -1) return false;
-                  if (line.indexOf('chunk-DQOE5FNA') !== -1) return false;
-                  if (line.indexOf('inject.js') !== -1) return false;
-                  if (line.indexOf('executeAction') !== -1) return false;
-                  if (line.indexOf('_startAction') !== -1) return false;
-                  if (line.indexOf('spyReport') !== -1) return false;
-                  return true;
-                });
-                stackTrace = filteredLines.join('\n');
-              }
-              
-              // Serialize arguments
-              var args = [];
-              try {
-                if (event.arguments && event.arguments.length > 0) {
-                  for (var i = 0; i < event.arguments.length; i++) {
-                    var arg = event.arguments[i];
-                    if (self.mobx && self.mobx.toJS) {
-                      try { arg = self.mobx.toJS(arg); } catch(e) {}
-                    }
-                    args.push(arg);
-                  }
-                  args = JSON.parse(JSON.stringify(args));
-                }
-              } catch (e) {
-                args = ['[serialization error]'];
-              }
-              
-              self.actionCount++;
-              self.actionStack.push({
-                id: Date.now() + '-' + self.actionCount,
-                name: actionName,
-                storeName: storeName,
-                timestamp: Date.now(),
-                changes: [],
-                isFiltered: isFiltered,
-                startDepth: self.reportEndDepth - 1,
-                arguments: args,
-                stackTrace: stackTrace
+            // Use untracked to prevent reaction cycles
+            if (mobx.untracked) {
+              mobx.untracked(function() {
+                self.handleSpyEvent(event);
               });
-            }
-            
-            // Report END
-            if (event.type === 'report-end') {
-              self.reportEndDepth--;
-              
-              if (self.actionStack.length > 0) {
-                var topAction = self.actionStack[self.actionStack.length - 1];
-                if (topAction.startDepth === self.reportEndDepth) {
-                  self.actionStack.pop();
-                  
-                  var shouldSend = topAction.isFiltered || topAction.changes.length > 0;
-                  if (shouldSend) {
-                    self.sendAction(topAction);
-                  }
-                }
-              }
-            }
-            
-            // Observable changes
-            if ((event.type === 'update' || event.type === 'add' || event.type === 'delete') && event.spyReportStart) {
-              if (self.editingPath && event.name && self.editingPath.indexOf(event.name) !== -1) {
-                return;
-              }
-              
-              var changeStoreName = null;
-              if (event.debugObjectName) {
-                var match = event.debugObjectName.match(/^([^@]+)/);
-                if (match) changeStoreName = match[1];
-              }
-              if (!changeStoreName && event.object && event.object.constructor) {
-                changeStoreName = event.object.constructor.name;
-              }
-              
-              if (!changeStoreName || changeStoreName === 'Object' || changeStoreName === 'Array') {
-                return;
-              }
-              
-              if (event.object) {
-                self.stores.set(changeStoreName, event.object);
-              }
-              
-              self.sendStateDebounced();
-              
-              var isFiltered = self.filteredStores && 
-                               self.filteredStores.length > 0 && 
-                               self.filteredStores.includes(changeStoreName);
-              
-              if (!isFiltered) {
-                return;
-              }
-              
-              var currentAction = self.getCurrentAction();
-              
-              if (currentAction) {
-                var change = {
-                  type: event.type,
-                  name: event.name || '',
-                  store: changeStoreName,
-                  observableKind: event.observableKind || ''
-                };
-                
-                try {
-                  if (self.mobx && self.mobx.toJS) {
-                    change.oldValue = self.mobx.toJS(event.oldValue);
-                    change.newValue = self.mobx.toJS(event.newValue);
-                  } else {
-                    change.oldValue = event.oldValue;
-                    change.newValue = event.newValue;
-                  }
-                  change = JSON.parse(JSON.stringify(change));
-                  currentAction.changes.push(change);
-                } catch (e) {
-                  change.oldValue = String(event.oldValue);
-                  change.newValue = String(event.newValue);
-                  currentAction.changes.push(change);
-                }
-              }
+            } else {
+              self.handleSpyEvent(event);
             }
           } catch (e) {}
         });
         
+      } catch (e) {}
+    },
+    
+    // Handle spy event (separated to use with untracked)
+    handleSpyEvent: function(event) {
+      var self = this;
+      try {
+        if (event.spyReportStart) {
+          self.reportEndDepth++;
+        }
+        
+        // Action START
+        if (event.type === 'action' && event.spyReportStart) {
+          var storeName = 'Unknown';
+          var actionName = event.name || '';
+          
+          var atIndex = actionName.indexOf('@');
+          if (atIndex > 0) {
+            storeName = actionName.substring(0, atIndex);
+          } else if (event.object && event.object.constructor) {
+            storeName = event.object.constructor.name || 'Store';
+          }
+          
+          if (event.object && storeName !== 'Unknown') {
+            self.stores.set(storeName, event.object);
+          }
+          
+          var isFiltered = self.filteredStores && 
+                           self.filteredStores.length > 0 && 
+                           self.filteredStores.includes(storeName);
+          
+          // Capture stack trace
+          var stackTrace = '';
+          try {
+            throw new Error();
+          } catch (e) {
+            stackTrace = e.stack || '';
+            var lines = stackTrace.split('\n');
+            var filteredLines = lines.filter(function(line, idx) {
+              if (idx === 0 && line.indexOf('Error') !== -1) return false;
+              if (line.indexOf('/mobx.') !== -1) return false;
+              if (line.indexOf('/mobx/') !== -1) return false;
+              if (line.indexOf('chunk-DQOE5FNA') !== -1) return false;
+              if (line.indexOf('inject.js') !== -1) return false;
+              if (line.indexOf('executeAction') !== -1) return false;
+              if (line.indexOf('_startAction') !== -1) return false;
+              if (line.indexOf('spyReport') !== -1) return false;
+              return true;
+            });
+            stackTrace = filteredLines.join('\n');
+          }
+          
+          // Serialize arguments safely (avoid reaction cycles)
+          var args = [];
+          try {
+            if (event.arguments && event.arguments.length > 0) {
+              for (var i = 0; i < event.arguments.length; i++) {
+                var arg = self.safeToJS(event.arguments[i]);
+                args.push(arg);
+              }
+              args = JSON.parse(JSON.stringify(args));
+            }
+          } catch (e) {
+            args = ['[serialization error]'];
+          }
+          
+          self.actionCount++;
+          self.actionStack.push({
+            id: Date.now() + '-' + self.actionCount,
+            name: actionName,
+            storeName: storeName,
+            timestamp: Date.now(),
+            changes: [],
+            isFiltered: isFiltered,
+            startDepth: self.reportEndDepth - 1,
+            arguments: args,
+            stackTrace: stackTrace
+          });
+        }
+        
+        // Report END
+        if (event.type === 'report-end') {
+          self.reportEndDepth--;
+          
+          if (self.actionStack.length > 0) {
+            var topAction = self.actionStack[self.actionStack.length - 1];
+            if (topAction.startDepth === self.reportEndDepth) {
+              self.actionStack.pop();
+              
+              var shouldSend = topAction.isFiltered || topAction.changes.length > 0;
+              if (shouldSend) {
+                self.sendAction(topAction);
+              }
+            }
+          }
+        }
+        
+        // Observable changes
+        if ((event.type === 'update' || event.type === 'add' || event.type === 'delete') && event.spyReportStart) {
+          if (self.editingPath && event.name && self.editingPath.indexOf(event.name) !== -1) {
+            return;
+          }
+          
+          var changeStoreName = null;
+          if (event.debugObjectName) {
+            var match = event.debugObjectName.match(/^([^@]+)/);
+            if (match) changeStoreName = match[1];
+          }
+          if (!changeStoreName && event.object && event.object.constructor) {
+            changeStoreName = event.object.constructor.name;
+          }
+          
+          if (!changeStoreName || changeStoreName === 'Object' || changeStoreName === 'Array') {
+            return;
+          }
+          
+          if (event.object) {
+            self.stores.set(changeStoreName, event.object);
+          }
+          
+          self.sendStateDebounced();
+          
+          var isFiltered = self.filteredStores && 
+                           self.filteredStores.length > 0 && 
+                           self.filteredStores.includes(changeStoreName);
+          
+          if (!isFiltered) {
+            return;
+          }
+          
+          var currentAction = self.getCurrentAction();
+          
+          if (currentAction) {
+            var change = {
+              type: event.type,
+              name: event.name || '',
+              store: changeStoreName,
+              observableKind: event.observableKind || ''
+            };
+            
+            try {
+              // Use safeToJS to avoid reaction cycles
+              change.oldValue = self.safeToJS(event.oldValue);
+              change.newValue = self.safeToJS(event.newValue);
+              change = JSON.parse(JSON.stringify(change));
+              currentAction.changes.push(change);
+            } catch (e) {
+              change.oldValue = String(event.oldValue);
+              change.newValue = String(event.newValue);
+              currentAction.changes.push(change);
+            }
+          }
+        }
       } catch (e) {}
     },
     
@@ -451,13 +478,10 @@
         this.stores.forEach(function(store, name) {
           try {
             var plain;
-            if (self.mobx && self.mobx.toJS) {
-              try {
-                plain = self.mobx.toJS(store);
-              } catch (e) {
-                plain = self.serialize(store, 0);
-              }
-            } else {
+            // Use safeToJS to avoid reaction cycles
+            try {
+              plain = self.safeToJS(store);
+            } catch (e) {
               plain = self.serialize(store, 0);
             }
             
