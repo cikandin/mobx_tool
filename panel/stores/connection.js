@@ -155,10 +155,10 @@ export function clearActions() {
   selectedAction.set(null);
 }
 
-export function requestSingleFrameSource(actionId, stackTrace, frameIdx) {
+export function requestSingleFrameSource(actionId, stackTrace, frameIdx, rawStackTrace) {
   sendToPage({
     type: 'GET_SINGLE_SOURCE',
-    payload: { actionId, stackTrace, frameIdx: +frameIdx }
+    payload: { actionId, stackTrace, frameIdx: +frameIdx, rawStackTrace }
   });
 }
 

@@ -211,7 +211,8 @@
             timestamp: action.timestamp,
             changes: action.changes,
             arguments: action.arguments || [],
-            stackTrace: mappedStack
+            stackTrace: mappedStack,
+            rawStackTrace: rawStack  // Keep original for fetching source
           });
         });
       }
@@ -668,7 +669,8 @@
         } else if (event.data.type === 'GET_SINGLE_SOURCE') {
           var payload = event.data.payload;
           var frameIdx = payload.frameIdx;
-          var stackTrace = payload.stackTrace;
+          // Use rawStackTrace for fetching (has full URLs), fall back to stackTrace
+          var stackTrace = payload.rawStackTrace || payload.stackTrace;
           
           var frames = hook.parseStackFrames(stackTrace);
           

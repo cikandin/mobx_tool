@@ -34,7 +34,8 @@
   function selectFrame(idx) {
     selectedFrame = idx;
     if (!action.stackWithSource?.[idx]?.sourceLines) {
-      requestSingleFrameSource(action.id, action.stackTrace, idx);
+      // Send rawStackTrace for fetching (has full URLs)
+      requestSingleFrameSource(action.id, action.stackTrace, idx, action.rawStackTrace);
     }
   }
   
