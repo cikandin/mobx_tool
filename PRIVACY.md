@@ -47,4 +47,3 @@ https://github.com/cikandin/mobx_tool/issues
 MobX DevTools is open source software. You can review the complete source code at:
 https://github.com/cikandin/mobx_tool
 
-
