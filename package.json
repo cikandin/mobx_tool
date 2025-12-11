@@ -12,6 +12,12 @@
     "vite": "^5.0.0"
   },
   "dependencies": {
-    "sourcemapped-stacktrace": "^1.1.11"
+    "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "autoprefixer": "^10.4.22",
+    "daisyui": "^4.12.24",
+    "postcss": "^8.5.6",
+    "sourcemapped-stacktrace": "^1.1.11",
+    "svelte": "^4.2.20",
+    "tailwindcss": "^3.4.19"
   }
 }
