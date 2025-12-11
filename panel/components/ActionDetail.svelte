@@ -125,6 +125,8 @@
                   </div>
                 {/each}
               </div>
+            {:else if frameSource}
+              <div class="p-2 text-center opacity-50 text-xs">Source not available</div>
             {:else}
               <div class="p-2 text-center opacity-50 text-xs">Loading...</div>
             {/if}
