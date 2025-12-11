@@ -55,12 +55,12 @@ function connectToBackground() {
 export function sendToPage(message) {
   if (!chrome.runtime?.id || !currentTabId) return;
   
-  // Panel must use port to send messages (chrome.tabs.sendMessage doesn't work in devtools)
-  if (port) {
-    try {
-      port.postMessage({ type: 'SEND_TO_PAGE', tabId: currentTabId, payload: message });
-    } catch (e) {}
-  }
+  chrome.tabs.sendMessage(currentTabId, {
+    type: 'SEND_TO_PAGE',
+    payload: message
+  }).catch(() => {
+    port?.postMessage({ type: 'SEND_TO_PAGE', tabId: currentTabId, payload: message });
+  });
 }
 
 export function sendFilterToPage() {
